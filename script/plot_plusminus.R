@@ -18,8 +18,6 @@ Sys.setlocale(locale = "es_ES.UTF-8")
 
 #### Import Data ####
 
-EuroleagueLogo = "https://media-cdn.incrowdsports.com/23610a1b-1c2e-4d2a-8fe4-ac2f8e400632.svg"
-
 TeamAll = getTeam() %>% distinct(code, images.crest) %>% 
   mutate(images.crest = paste0(images.crest, "?width=250")) %>%
   rename(team.code.against = code)
@@ -31,7 +29,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   TeamNameChosen = TeamChosen$name
   TeamPrimaryChosen = TeamChosen$primaryColor
   TeamSecondaryChosen = TeamChosen$secondaryColor
-  TeamLogoChosen = TeamChosen$images.crest
+  TeamLogoChosen = glue("_temp/{TeamCodeChosen}/{TeamCodeChosen}-logo.png")
   
   GamesPlayed = getTeamGames(TeamCodeChosen) %>%
     filter(status == "result") %>% 
@@ -44,10 +42,10 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   TeamPeople = getTeamPeople(TeamCodeChosen) %>% 
     filter(typeName == "Player") %>%
-    mutate(Player_ID = paste0("P", trimws(person.code)),
+    mutate(Player_ID = trimws(person.code),
            images.headshot = ifelse(is.na(images.headshot),
                                     "www/images/missing-player.png",
-                                    paste0(images.headshot, "?width=250"))) %>% 
+                                    glue("_temp/{TeamCodeChosen}/{Player_ID}.png"))) %>% 
     distinct(Player_ID, images.headshot)
   
   PlayerStats = NULL
@@ -56,7 +54,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
       PlayerStats,
       getGameBoxScore(GamesPlayed$code[i]) %>% .[["PlayerStats"]] %>% filter(Team == TeamCodeChosen) %>% 
         mutate(round.round = GamesPlayed$round.round[i],
-               Player_ID = trimws(Player_ID), .before = 1)
+               Player_ID = trimws(gsub("P", "", Player_ID)), .before = 1)
     )
   }
   PlayerStats = PlayerStats %>%
