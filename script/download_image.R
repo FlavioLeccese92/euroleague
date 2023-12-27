@@ -6,7 +6,7 @@ library(dplyr)
 library(glue)
 
 TeamAll = getTeam() %>% distinct(code, images.crest) %>% 
-  mutate(images.crest = paste0(images.crest, "?width=300")) %>%
+  mutate(images.crest = glue("{images.crest}?width=300")) %>%
   rename(team.code.against = code)
 
 for(TeamCodeChosen in TeamAll$team.code.against) {
