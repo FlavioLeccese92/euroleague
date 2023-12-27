@@ -7,13 +7,14 @@ library(dplyr)
 library(httr)
 library(jsonlite)
 library(scales)
+library(glue)
 
 ### Game ###
 
 # getGameHeader
 getGameHeader = function(GameCode, SeasonCode = "E2023"){
   "https://live.euroleague.net/api/Header?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.)  %>%
     return()
 }
@@ -21,8 +22,7 @@ getGameHeader = function(GameCode, SeasonCode = "E2023"){
 # getGameBoxScore
 getGameBoxScore = function(GameCode, SeasonCode = "E2023"){
   out = "https://live.euroleague.net/api/BoxScore?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode, 
-           "&temp=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}&temp={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.)
   
   out[["Team"]] = out$Stats$Team
@@ -39,7 +39,7 @@ getGameBoxScore = function(GameCode, SeasonCode = "E2023"){
 # getGamePoints
 getGamePoints = function(GameCode, SeasonCode = "E2023"){
   "https://live.euroleague.net/api/Points?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$Rows %>%
     as_tibble() %>% return()
 }
@@ -47,7 +47,7 @@ getGamePoints = function(GameCode, SeasonCode = "E2023"){
 # getGameRound
 getGameRound = function(GameCode, SeasonCode = "E2023"){
   "https://live.euroleague.net/api/Round?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
     return()
 }
@@ -55,8 +55,7 @@ getGameRound = function(GameCode, SeasonCode = "E2023"){
 # getGamePlayers
 getGamePlayers = function(GameCode, Team = "VIR", SeasonCode = "E2023"){
   "https://live.euroleague.net/api/Players?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode, 
-           "&disp=&equipo=", Team, "&temp=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}&disp=&equipo={Team}&temp={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
     as_tibble() %>% return()
 }
@@ -64,8 +63,7 @@ getGamePlayers = function(GameCode, Team = "VIR", SeasonCode = "E2023"){
 # getGamePlayByPlay
 getGamePlayByPlay = function(GameCode, SeasonCode = "E2023"){
   "https://live.euroleague.net/api/PlayByPlay?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode, 
-           "&disp=&equipo=", Team, "&temp=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}&disp=&equipo={Team}&temp={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% 
   return()
 }
@@ -73,7 +71,7 @@ getGamePlayByPlay = function(GameCode, SeasonCode = "E2023"){
 # getGameEvolution
 getGameEvolution = function(GameCode, SeasonCode = "E2023"){
   "https://live.euroleague.net/api/Evolution?" %>% 
-    paste0("gamecode=", GameCode, "&seasoncode=", SeasonCode) %>%
+    glue("gamecode={GameCode}&seasoncode={SeasonCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.)  %>%
     return()
 }
@@ -83,7 +81,7 @@ getGameEvolution = function(GameCode, SeasonCode = "E2023"){
 # getTeam
 getTeam = function(TeamCode = "", Competition = "E", SeasonCode = "E2023"){
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons/", SeasonCode, "/clubs/", TeamCode) %>%
+    glue("{Competition}/seasons/{SeasonCode}/clubs/{TeamCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     { if(is.null(dim(.)))
       unlist(.) %>% t()%>% 
@@ -96,7 +94,7 @@ getTeam = function(TeamCode = "", Competition = "E", SeasonCode = "E2023"){
 # getTeamPeople
 getTeamPeople = function(TeamCode, Competition = "E", SeasonCode = "E2023"){
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons/", SeasonCode, "/clubs/", TeamCode, "/people") %>%
+    glue("{Competition}/seasons/{SeasonCode}/clubs/{TeamCode}/people") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
     as_tibble() %>%
     unnest(cols = c(person, images, club, season), names_sep = ".") %>% 
@@ -108,7 +106,7 @@ getTeamPeople = function(TeamCode, Competition = "E", SeasonCode = "E2023"){
 # getTeamGames
 getTeamGames = function(TeamCode, Competition = "E", SeasonCode = "E2023"){
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons/", SeasonCode, "/games?TeamCode=", TeamCode) %>%
+    glue("{Competition}/seasons/{SeasonCode}/games?TeamCode={TeamCode}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     as_tibble() %>%
     unnest(cols = c(season, competition, group, phaseType, round, home,
@@ -121,11 +119,9 @@ getTeamGames = function(TeamCode, Competition = "E", SeasonCode = "E2023"){
 }
 
 # getTeamStats
-getTeamStats = function(TeamCode, Competition = "E", SeasonCode = "E2023",
-                        PhaseType = ""){
+getTeamStats = function(TeamCode, Competition = "E", SeasonCode = "E2023", PhaseType = ""){
   out = "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons/", SeasonCode, "/clubs/", TeamCode,
-           "/people/stats?phaseTypeCode=", PhaseType) %>%
+    glue("{Competition}/seasons/{SeasonCode}clubs/{TeamCode}/people/stats?phaseTypeCode={PhaseType}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.)
   
   out[["playerStats"]] = out[["playerStats"]] %>% as_tibble() %>%
@@ -149,7 +145,7 @@ getTeamStats = function(TeamCode, Competition = "E", SeasonCode = "E2023",
 # GetCompetitionRounds
 GetCompetitionRounds = function(Competition = "E", SeasonCode = "E2023"){
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons/", SeasonCode, "/rounds") %>%
+    glue("{Competition}/seasons/{SeasonCode}/rounds") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     as_tibble() %>% 
     return()
@@ -157,10 +153,8 @@ GetCompetitionRounds = function(Competition = "E", SeasonCode = "E2023"){
 
 # getCompetitionGames
 getCompetitionGames = function(PhaseType = "", Round, Competition = "E", SeasonCode = "E2023"){
-  
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons/", SeasonCode, "/games?",
-           "phaseTypeCode=", PhaseType, "&roundNumber=", Round) %>%
+    glue("{Competition}/seasons/{SeasonCode}/games?phaseTypeCode={PhaseType}&roundNumber={Round}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     as_tibble() %>%
     unnest(cols = c(season, competition, group, phaseType, round, home,
@@ -175,7 +169,7 @@ getCompetitionGames = function(PhaseType = "", Round, Competition = "E", SeasonC
 # GetCompetitionHistory
 GetCompetitionHistory = function(Competition = "E"){
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    paste0(Competition, "/seasons") %>%
+    glue("{Competition}/seasons") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     as_tibble() %>% 
     return()
