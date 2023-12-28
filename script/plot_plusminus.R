@@ -73,8 +73,8 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   showtext_opts(dpi = 200)
   showtext_auto() 
   
-  OffsetY = 7 # Left shift to make space for player image
-  OffsetX = 5 # (Half) middle shift to make space for team images
+  OffsetY = 7 # (Half) middle shift to make space for team images
+  OffsetX = 5 # Left shift to make space for player image
   
   LastN = 16 # Last N rounds to plot
   
