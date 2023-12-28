@@ -84,7 +84,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   XLowerLimit = RangeX[2] - LastN - OffsetX # Lower limit for x axis (player image + data)
   XUpperLimit = RangeX[2] + 2 # Upper limit for x axis (data + y axis annotation)
   YLowerLimit = -30 - OffsetY - 7 # Lower limit for y axis (data + middle space for teams logo + spacing)
-  YUpperLimit = 30 + OffsetY + 7 # Lower limit for y axis (data + middle space for teams logo + spacing)
+  YUpperLimit = 30 + OffsetY + 7 # Upper limit for y axis (data + middle space for teams logo + spacing)
   GameRangeDate = format(sort(unique(PlayerStats$game.date)), "%d %b %Y")[c(XStart, XEnd)] # Format date of games
   
   BreaksY = c(-(OffsetY + seq(30, 0, -15)), (OffsetY + seq(0, 30, 15)))
