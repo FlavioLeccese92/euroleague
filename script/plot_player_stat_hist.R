@@ -9,6 +9,7 @@ library(showtext)
 library(ggfun)
 library(ggimage)
 library(ggnewscale)
+library(ggforce)
 library(glue)
 library(ragg)
 library(elementalist) # devtools::install_github("teunbrand/elementalist")
@@ -37,7 +38,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   TeamChosen = getTeam(TeamCodeChosen)
   
-  TeamNameChosen = TeamChosen$name
+  TeamNameChosen = TeamChosen$name %>% print()
   TeamPrimaryChosen = TeamChosen$primaryColor
   TeamSecondaryChosen = TeamChosen$secondaryColor
   TeamLogoChosen = glue("_temp/{TeamCodeChosen}/{TeamCodeChosen}-logo.png")
@@ -56,8 +57,9 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
     mutate(Player_ID = trimws(person.code),
            images.headshot = ifelse(is.na(images.headshot),
                                     "www/images/missing-player.png",
-                                    glue("_temp/{TeamCodeChosen}/{Player_ID}.png"))) %>% 
-    distinct(Player_ID, images.headshot)
+                                    glue("_temp/{TeamCodeChosen}/{Player_ID}.png")),
+           active.player = as.Date(endDate) >= Sys.Date()) %>% 
+    distinct(Player_ID, images.headshot, active.player)
   
   PlayerStats = NULL
   for (i in 1:nrow(GamesPlayed)) {
@@ -71,11 +73,17 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   PlayerStats = PlayerStats %>%
     left_join(GamesPlayed, by = "round.round") %>%
     left_join(TeamPeople, by = "Player_ID") %>%
+    filter(active.player) %>%
     mutate(Player = paste0(gsub(".*, ", "", Player), " ", gsub(",.*", "", Player), " #", Dorsal))
   
   #### Setup plot ####
   
-  OffsetY = 10 # Bottom shift to make space for team images
+  stat = "Valuation"
+  YEnd = case_when(stat == "Points" ~ 40,
+                   stat ==  "Valuation" ~ 45,
+                   TRUE ~ NA)
+  
+  OffsetY = 0.2*YEnd # Bottom and Upper shift to make space for team images
   OffsetX = 5 # Left shift to make space for player image
   
   LastN = 16 # Last N rounds to plot
@@ -86,24 +94,24 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   XLowerLimit = RangeX[2] - LastN - OffsetX # Lower limit for x axis (player image + data)
   XUpperLimit = RangeX[2] + 2 # Upper limit for x axis (data + y axis annotation)
   YLowerLimit = 0 # Lower limit for y axis (data + middle space for teams logo + spacing)
-  YUpperLimit = 45 + OffsetY # Lower limit for y axis (data + middle space for teams logo + spacing)
+  YUpperLimit = YEnd + 2*OffsetY # Upper limit for y axis (data + middle space for teams logo + spacing)
   GameRangeDate = format(sort(unique(PlayerStats$game.date)), "%d %b %Y")[c(XStart, XEnd)] # Format date of games
   
-  BreaksY = OffsetY + seq(0, 40, 10)
-  LabelsY = seq(0, 40, 10)
+  BreaksY = OffsetY + seq(0, YEnd, 10)
+  LabelsY = seq(0, YEnd, 10)
   
-  stat = "Points"
-  
-  PlayerStatsForPlot = PlayerStats %>%
-    filter(round.round >= XEnd - LastN) %>% 
+  PlayerStatsForPlot = PlayerStats %>% 
     group_by(Player) %>%
+    filter(Minutes  != "DNP") %>%
     mutate(n.games = n(),
            mean.stats = mean(!!sym(stat)) %>% round(., 2),
            stat = !!as.symbol(stat) + OffsetY,
            Player = paste0(Player, " (avg ", mean.stats, " / ", n.games, " games)"),
            mean.stats = mean.stats %>% ifelse(n.games > 6, ., -30)) %>% 
-    ungroup() %>% 
+    ungroup() %>%
+    filter(round.round > XEnd - LastN) %>% 
     arrange(desc(mean.stats)) %>% 
+    filter(Player %in% unique(.$Player)[1:16]) %>%
     mutate(Player = factor(Player, levels = unique(.$Player))) %>% 
     arrange(round.round) %>% 
     distinct(round.round, game.date, Player, stat,
@@ -116,9 +124,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
                          Player = ZPlayers) %>% 
     as_tibble() %>%
     mutate(YEnd = YStart, XStart = XStart - OffsetX - 1, XEnd = XEnd,
-           YLabel = YStart - OffsetY,
-           YColor = case_when(YLabel == 0 ~ "lvl0", YLabel == 10 ~ "lvl1", YLabel == 20 ~ "lvl2", 
-                              YLabel == 30 ~ "lvl3", YLabel == 40 ~ "lvl4", TRUE ~ NA))
+           YLabel = YStart - OffsetY)
   
   # Data for points above bars (+3) corresponding to Home/Away Location
   TeamHome = PlayerStatsForPlot %>% 
@@ -128,7 +134,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   # Data for Team Against images, showing in the middle of plot
   TeamAgainstImage = PlayerStatsForPlot %>% 
     distinct(Player, round.round, images.crest) %>% 
-    mutate(stat = 5)
+    mutate(stat = OffsetY/2)
   
   # Data for Player image, showing on the left side (XLowerLimit + 2)
   PlayerImage = PlayerStatsForPlot %>% 
@@ -161,12 +167,11 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   # Draw horizontal lines + y labels + plot polygon left (aesthetic choice) 
   e = e +
-    geom_segment(data = SegmentY, aes(x = XStart, xend = XEnd + 0.5, y = YStart, yend = YEnd,
-                                      colour = YColor), alpha = 0.50) +
-    geom_text(data = SegmentY, aes(y = YStart, label = YLabel, colour = YColor), x = XEnd + 1,
-              size = 3, alpha = 0.5) +
-    scale_colour_manual(values = c("lvl0" = "grey40", "lvl1" = "grey50", "lvl2"= "grey60",
-                                   "lvl3" = "grey70", "lvl4"= "grey80")) +
+    geom_link(data = SegmentY, aes(x = XStart, xend = XEnd + 0.5, y = YStart, yend = YEnd,
+                                   colour = after_stat(index)), linewidth = 0.3) +
+    geom_text(data = SegmentY, aes(y = YStart, label = YLabel), colour = TeamPrimaryChosen, x = XEnd + 1,
+              size = 2.5) +
+    scale_colour_gradient2(low =  "white", mid = "white", high = TeamPrimaryChosen) +
     annotate(geom = "polygon", fill = "white",
              x = c(XLowerLimit, XLowerLimit, XStart - 1.5, XStart), 
              y = c(YUpperLimit, YLowerLimit, YLowerLimit, YUpperLimit))
@@ -176,7 +181,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
     geom_bar(aes(fill = TeamCodeChosen.win), stat = "identity", linewidth = 0.75, alpha = 0.8) +
     scale_fill_manual("Match Result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
     geom_rect(xmin = XStart - 0.5, xmax = XEnd + 0.5,
-              ymin = 0, ymax = OffsetY - 0.5, fill = "#e5e5e5")
+              ymin = 0, ymax = OffsetY - 0.5, fill = "grey90")
   
   # Draw points for Home/Away location + new scale fill values
   e = e +
@@ -192,14 +197,14 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   # Facet by Player + general theme setting
   e = e +
-    facet_wrap(~Player, nrow = 4, scales = 'free') +
+    facet_wrap(~Player, ncol = 4, scales = 'free') +
     scale_y_continuous(limits = c(YLowerLimit, YUpperLimit), 
                        breaks = BreaksY, labels = LabelsY, expand = c(0, 0)) +
     scale_x_continuous(limits = c(XLowerLimit, XUpperLimit), expand = c(0, 0)) +
     theme(
       # General
       panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-      panel.background = element_rect_round(fill = "#e5e5e5"),
+      panel.background = element_rect_round(fill = "grey90"),
       plot.margin = margin(20, 5, -5, 5),
       text = element_text(family = "Lato"),
       # Axis labels
@@ -233,10 +238,9 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
     guides(color = "none") +
     coord_cartesian(clip = "off")
   
-  e
   #### Save plot ####
   agg_png(glue("plots/E2023/{TeamCodeChosen}/player_{tolower(stat)}.png"),
-          height = 2000, width = 3800, units = "px", res = 200)
+          height = 2000, width = 4000, units = "px", res = 200)
   print(e)
   dev.off()
 }
