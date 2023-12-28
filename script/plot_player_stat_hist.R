@@ -22,6 +22,17 @@ TeamAll = getTeam() %>% distinct(code, images.crest) %>%
   mutate(images.crest = paste0(images.crest, "?width=250")) %>%
   rename(team.code.against = code)
 
+#### Setting ggplot2 ####
+
+# Add Lato font (Euroleague official font)
+font_add_google("Lato", "Lato")
+font_add_google("Inconsolata", "Inconsolata")
+
+# Add Font Awesome for logos
+sysfonts::font_add(family = "Font Awesome 6 Brands", regular = "www/fonts/fa-brands-400.ttf")
+showtext_opts(dpi = 200)
+showtext_auto() 
+
 for (TeamCodeChosen in TeamAll$team.code.against) {
   
   TeamChosen = getTeam(TeamCodeChosen)
@@ -64,16 +75,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   #### Setup plot ####
   
-  # Add Lato font (Euroleague official font)
-  font_add_google("Lato", "Lato")
-  font_add_google("Inconsolata", "Inconsolata")
-  
-  # Add Font Awesome for logos
-  sysfonts::font_add(family = "Font Awesome 6 Brands", regular = "www/fonts/fa-brands-400.ttf")
-  showtext_opts(dpi = 200)
-  showtext_auto() 
-  
-  OffsetY = 7 # (Half) middle shift to make space for team images
+  OffsetY = 10 # Bottom shift to make space for team images
   OffsetX = 5 # Left shift to make space for player image
   
   LastN = 16 # Last N rounds to plot
@@ -83,27 +85,28 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   XEnd = RangeX[2] # Ending x for actual data plot
   XLowerLimit = RangeX[2] - LastN - OffsetX # Lower limit for x axis (player image + data)
   XUpperLimit = RangeX[2] + 2 # Upper limit for x axis (data + y axis annotation)
-  YLowerLimit = -30 - OffsetY - 7 # Lower limit for y axis (data + middle space for teams logo + spacing)
-  YUpperLimit = 30 + OffsetY + 7 # Upper limit for y axis (data + middle space for teams logo + spacing)
+  YLowerLimit = 0 # Lower limit for y axis (data + middle space for teams logo + spacing)
+  YUpperLimit = 45 + OffsetY # Lower limit for y axis (data + middle space for teams logo + spacing)
   GameRangeDate = format(sort(unique(PlayerStats$game.date)), "%d %b %Y")[c(XStart, XEnd)] # Format date of games
   
-  BreaksY = c(-(OffsetY + seq(30, 0, -15)), (OffsetY + seq(0, 30, 15)))
-  LabelsY = c(-(seq(30, 0, -15)), (seq(0, 30, 15)))
+  BreaksY = OffsetY + seq(0, 40, 10)
+  LabelsY = seq(0, 40, 10)
+  
+  stat = "Points"
   
   PlayerStatsForPlot = PlayerStats %>%
     filter(round.round >= XEnd - LastN) %>% 
     group_by(Player) %>%
     mutate(n.games = n(),
-           mean.plusminus = mean(Plusminus) %>% round(., 2),
-           Plusminus = case_when(Plusminus > 0 ~ Plusminus + OffsetY, 
-                                 Plusminus < 0 ~ Plusminus - OffsetY, TRUE ~ Plusminus),
-           Player = paste0(Player, " (avg ", mean.plusminus, " / ", n.games, " games)"),
-           mean.plusminus = mean.plusminus %>% ifelse(n.games > 6, ., -30)) %>% 
+           mean.stats = mean(!!sym(stat)) %>% round(., 2),
+           stat = !!as.symbol(stat) + OffsetY,
+           Player = paste0(Player, " (avg ", mean.stats, " / ", n.games, " games)"),
+           mean.stats = mean.stats %>% ifelse(n.games > 6, ., -30)) %>% 
     ungroup() %>% 
-    arrange(desc(mean.plusminus)) %>% 
+    arrange(desc(mean.stats)) %>% 
     mutate(Player = factor(Player, levels = unique(.$Player))) %>% 
     arrange(round.round) %>% 
-    distinct(round.round, game.date, Player, Plusminus,
+    distinct(round.round, game.date, Player, stat,
              team.home.away, TeamCodeChosen.win, images.headshot, images.crest)
   
   ZPlayers = unique(PlayerStatsForPlot$Player) # Facet unique players
@@ -113,27 +116,27 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
                          Player = ZPlayers) %>% 
     as_tibble() %>%
     mutate(YEnd = YStart, XStart = XStart - OffsetX - 1, XEnd = XEnd,
-           YLabel = YStart - OffsetY*sign(YStart),
-           YColor = case_when(YLabel == 0 ~ "lvl0", abs(YLabel) == 15 ~ "lvl1",
-                              abs(YLabel) == 30 ~ "lvl2", TRUE ~ NA))
+           YLabel = YStart - OffsetY,
+           YColor = case_when(YLabel == 0 ~ "lvl0", YLabel == 10 ~ "lvl1", YLabel == 20 ~ "lvl2", 
+                              YLabel == 30 ~ "lvl3", YLabel == 40 ~ "lvl4", TRUE ~ NA))
   
-  # Data for points above/below bars (+/- 3) corresponding to Home/Away Location
+  # Data for points above bars (+3) corresponding to Home/Away Location
   TeamHome = PlayerStatsForPlot %>% 
-    distinct(Player, round.round, team.home.away, Plusminus) %>% 
-    mutate(Plusminus = sign(Plusminus)*3 + Plusminus)
+    distinct(Player, round.round, team.home.away, stat) %>% 
+    mutate(stat = 3 + stat)
   
   # Data for Team Against images, showing in the middle of plot
   TeamAgainstImage = PlayerStatsForPlot %>% 
     distinct(Player, round.round, images.crest) %>% 
-    mutate(Plusminus = 0)
+    mutate(stat = 5)
   
   # Data for Player image, showing on the left side (XLowerLimit + 2)
   PlayerImage = PlayerStatsForPlot %>% 
     distinct(Player, images.headshot) %>% 
-    mutate(round.round = XLowerLimit + 3, Plusminus = -5)
+    mutate(round.round = XLowerLimit + 3, stat = (YUpperLimit+YLowerLimit)/2*0.9)
   
   # Plot title, subtitle and caption
-  PlotTitle = glue("<span>Plus-Minus</span><br>
+  PlotTitle = glue("<span>{stat}</span><br>
                     <span style = 'font-size: 20px'>{TeamNameChosen}
                     | round {XStart} - {XEnd} | {GameRangeDate[1]} - {GameRangeDate[2]}</span>")
   
@@ -154,7 +157,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   # Initialize
   e = ggplot(data = PlayerStatsForPlot, 
-             aes(x = round.round, y = Plusminus, group = Player))
+             aes(x = round.round, y = stat, group = Player))
   
   # Draw horizontal lines + y labels + plot polygon left (aesthetic choice) 
   e = e +
@@ -162,17 +165,18 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
                                       colour = YColor), alpha = 0.50) +
     geom_text(data = SegmentY, aes(y = YStart, label = YLabel, colour = YColor), x = XEnd + 1,
               size = 3, alpha = 0.5) +
-    scale_colour_manual(values = c("lvl0" = "grey40", "lvl1" = "grey55", "lvl2"= "grey70")) +
+    scale_colour_manual(values = c("lvl0" = "grey40", "lvl1" = "grey50", "lvl2"= "grey60",
+                                   "lvl3" = "grey70", "lvl4"= "grey80")) +
     annotate(geom = "polygon", fill = "white",
              x = c(XLowerLimit, XLowerLimit, XStart - 1.5, XStart), 
-             y = c(YUpperLimit, -YUpperLimit, -YUpperLimit, YUpperLimit))
+             y = c(YUpperLimit, YLowerLimit, YLowerLimit, YUpperLimit))
   
   # Draw bars for statistics + scale fill values + cover central part of bars with background
   e = e + 
     geom_bar(aes(fill = TeamCodeChosen.win), stat = "identity", linewidth = 0.75, alpha = 0.8) +
     scale_fill_manual("Match Result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
     geom_rect(xmin = XStart - 0.5, xmax = XEnd + 0.5,
-              ymin = -OffsetY + 0.5, ymax = OffsetY - 0.5, fill = "#e5e5e5")
+              ymin = 0, ymax = OffsetY - 0.5, fill = "#e5e5e5")
   
   # Draw points for Home/Away location + new scale fill values
   e = e +
@@ -185,7 +189,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
     geom_image(data = TeamAgainstImage, aes(image = images.crest), size = 0.1) +
     geom_image(data = PlayerImage, aes(image = images.headshot), size = 0.7,
                image_fun = function(img) {magick::image_fx(img, expression = "1*a", channel = "alpha")})
-    
+  
   # Facet by Player + general theme setting
   e = e +
     facet_wrap(~Player, nrow = 4, scales = 'free') +
@@ -220,7 +224,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
       # Facet
       strip.background = element_rect(fill = TeamPrimaryChosen),
       strip.text = element_text(colour = TextContrast(TeamPrimaryChosen), hjust = 0)
-      ) +
+    ) +
     labs(title = PlotTitle, subtitle = PlotSubtitle, caption = PlotCaption,
          x = "", y = "")
   
@@ -229,8 +233,9 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
     guides(color = "none") +
     coord_cartesian(clip = "off")
   
+  e
   #### Save plot ####
-  agg_png(glue("plots/E2023/{TeamCodeChosen}/player_plusminus.png"),
+  agg_png(glue("plots/E2023/{TeamCodeChosen}/player_{tolower(stat)}.png"),
           height = 2000, width = 3800, units = "px", res = 200)
   print(e)
   dev.off()
