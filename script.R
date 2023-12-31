@@ -253,10 +253,10 @@ GetPlayerAllStats = function(team_code, game_status = "result") {
 ### Utils ###
 
 StatsRange = tibble(
-  Stat = c("PM", "3FG%", "2FG%"),
-  Min = c(-30, 0, 0),
-  Max = c(30, 100, 100),
-  By = c(15, 20, 20)
+  Stat = c("PM", "3FG%", "2FG%", "FTG%"),
+  Min = c(-30, 0, 0, 0),
+  Max = c(30, 100, 100, 100),
+  By = c(15, 20, 20, 20)
 )
 
 TextFormat = function(x){
