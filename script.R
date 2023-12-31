@@ -256,7 +256,11 @@ StatsRange = tibble(
   Stat = c("PM", "3FG%", "2FG%", "FTG%"),
   Min = c(-30, 0, 0, 0),
   Max = c(30, 100, 100, 100),
-  By = c(15, 20, 20, 20)
+  By = c(15, 20, 20, 20),
+  TopMargin = c(10, 15, 15, 15),
+  BottomMargin = c(10, 10, 10, 10),
+  MiddleOffset = c(15, 0, 0, 0),
+  BottomOffset = c(0, 10, 10, 10)
 )
 
 TextFormat = function(x){

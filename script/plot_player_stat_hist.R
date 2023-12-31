@@ -58,13 +58,30 @@ for (team_code in TeamAll$TeamCode) {
     mutate(Player = paste0(gsub(".*, ", "", Player), " ", gsub(",.*", "", Player), " #", Dorsal))
   
   #### Setup plot ####
-  stat = "2FG%"; gstat = glue("G{stat}")
+  for (stat in c("PM", "3FG%", "2FG%", "FTG%")) {
+  # stat = "3FG%"; 
+  print(stat)
+  gstat = glue("G{stat}")
   StatsRangeForPlot = StatsRange %>% filter(Stat == stat)
-  YStart = StatsRangeForPlot$Min
-  YEnd = StatsRangeForPlot$Max
-  YBy = StatsRangeForPlot$By
   
-  OffsetY = 0.2*YEnd # Bottom and Upper shift to make space for team images
+  # Vertical
+  YStart = StatsRangeForPlot$Min; YEnd = StatsRangeForPlot$Max; YBy = StatsRangeForPlot$By
+  BottomMargin = StatsRangeForPlot$BottomMargin; TopMargin = StatsRangeForPlot$TopMargin
+  BottomOffset = StatsRangeForPlot$BottomOffset; MiddleOffset = StatsRangeForPlot$MiddleOffset
+  if (MiddleOffset == 0) {
+    YUpperZero = BottomMargin + BottomOffset; YLowerZero = 0
+    YUpperLimit = YEnd + BottomMargin + BottomOffset + TopMargin; YLowerLimit = YStart
+    BreaksY = BottomMargin + BottomOffset + seq(0, YEnd, YBy)
+    LabelsY = seq(0, YEnd, YBy); ShiftStat = BottomMargin + BottomOffset
+  } else {
+    YUpperZero = MiddleOffset/2; YLowerZero = - MiddleOffset/2
+    YUpperLimit = YEnd + TopMargin + MiddleOffset/2; YLowerLimit = YStart - BottomMargin - MiddleOffset/2
+    BreaksY = c((-MiddleOffset/2 + seq(YStart, 0, YBy)), (MiddleOffset/2 + seq(0, YEnd, YBy)))
+    LabelsY = c(seq(YStart, 0, YBy), seq(0, YEnd, YBy)); ShiftStat = MiddleOffset/2
+  }
+  YSpan = YUpperLimit - YLowerLimit
+  YCenter = (YUpperLimit + YLowerLimit)/2
+  
   OffsetX = 5 # Left shift to make space for player image
   
   LastN = 16 # Last N rounds to plot
@@ -74,19 +91,15 @@ for (team_code in TeamAll$TeamCode) {
   XEnd = RangeX[2] # Ending x for actual data plot
   XLowerLimit = RangeX[2] - LastN - OffsetX # Lower limit for x axis (player image + data)
   XUpperLimit = RangeX[2] + 2 # Upper limit for x axis (data + y axis annotation)
-  YLowerLimit = 0 # Lower limit for y axis (data + middle space for teams logo + spacing)
-  YUpperLimit = YEnd + 2*OffsetY # Upper limit for y axis (data + middle space for teams logo + spacing)
   GameRangeDate = format(sort(unique(PlayerStats$GameDate)), "%d %b %Y")[c(XStart, XEnd)] # Format date of games
-  
-  BreaksY = OffsetY + seq(0, YEnd, YBy)
-  LabelsY = seq(0, YEnd, YBy)
   
   PlayerStatsForPlot = PlayerStats %>%
     select(everything(),
            stat = {{stat}}, gstat = {{gstat}}) %>% 
     mutate(Player = paste0(Player, " (avg ", gstat, " / ", GP, " games)"),
-           stat = case_when(stat > 0 ~ stat + OffsetY, 
-                            stat < 0 ~ stat - OffsetY, TRUE ~ OffsetY),
+           stat = case_when(stat > 0 ~ stat + ShiftStat, 
+                            stat < 0 ~ stat - ShiftStat,
+                            TRUE ~ ShiftStat),
            gstat = gstat %>% ifelse(GP > 6, ., -30)) %>% 
     ungroup() %>%
     filter(Round > XEnd - LastN) %>% 
@@ -104,22 +117,23 @@ for (team_code in TeamAll$TeamCode) {
                          Player = ZPlayers) %>% 
     as_tibble() %>%
     mutate(YEnd = YStart, XStart = XStart - OffsetX - 1, XEnd = XEnd,
-           YLabel = YStart - OffsetY*sign(YStart))
+           YLabel = YStart - sign(YStart)*ShiftStat)
   
   # Data for points above/below bars (+/- 3) corresponding to Home/Away Location
   TeamHome = PlayerStatsForPlot %>% 
     distinct(Player, Round, HomeAway, stat) %>% 
-    mutate(stat = YUpperLimit/20 + stat)
+    mutate(stat = sign(stat)*YSpan/30 + stat)
   
   # Data for Team Against images, showing in the middle of plot
   TeamAgainstImage = PlayerStatsForPlot %>% 
     distinct(Player, Round, ImagesCrest) %>% 
-    mutate(stat = OffsetY/2)
+    # mutate(stat = BottomMargin)
+    mutate(stat = max(BottomOffset, 0))
   
   # Data for Player image, showing on the left side (XLowerLimit + 3)
   PlayerImage = PlayerStatsForPlot %>% 
     distinct(Player, ImagesHeadshot) %>% 
-    mutate(Round = XLowerLimit + 2.5, stat = YUpperLimit*0.5)
+    mutate(Round = XLowerLimit + 2.5, stat = YCenter)
   
   # Plot title, subtitle and caption
   PlotTitle = glue("<span>{stat}</span><br>
@@ -151,8 +165,8 @@ for (team_code in TeamAll$TeamCode) {
                                    colour = after_stat(index)), linewidth = 0.3) +
     geom_text(data = SegmentY, aes(y = YStart, label = YLabel), colour = TeamPrimaryChosen, x = XEnd + 1,
               size = 2.5) +
-    scale_colour_gradient2(low =  "white", mid = "white", high = TeamPrimaryChosen) +
-    annotate(geom = "polygon", fill = "white",
+    scale_colour_gradient2(low =  "#f5f5f5", mid = "#f5f5f5", high = TeamPrimaryChosen) +
+    annotate(geom = "polygon", fill = "#f5f5f5",
              x = c(XLowerLimit, XLowerLimit, XStart - 1.5, XStart), 
              y = c(YUpperLimit, YLowerLimit, YLowerLimit, YUpperLimit))
   
@@ -161,13 +175,13 @@ for (team_code in TeamAll$TeamCode) {
     geom_bar(aes(fill = WinLoss), stat = "identity", linewidth = 0.75, alpha = 0.8) +
     scale_fill_manual("Match Result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
     geom_rect(xmin = XStart - 0.5, xmax = XEnd + 0.5,
-              ymin = 0, ymax = OffsetY - 0.5, fill = "grey90")
+              ymin = YLowerZero, ymax = YUpperZero - 1, fill = "grey90")
   
   # Draw points for Home/Away location + new scale fill values
   e = e +
     new_scale("fill") +
     geom_point(data = TeamHome, aes(fill = HomeAway), shape = 21, alpha = 0.50) +
-    scale_fill_manual("Match Location", values = c("Home" = "black", "Away" = "white"))
+    scale_fill_manual("Match Location", values = c("Home" = "#111111", "Away" = "#f5f5f5"))
   
   # Plot player image + team against images in the middle
   e = e +
@@ -185,6 +199,7 @@ for (team_code in TeamAll$TeamCode) {
       # General
       panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
       panel.background = element_rect_round(fill = "grey90"),
+      plot.background = element_rect(fill = "#f5f5f5"),
       plot.margin = margin(20, 5, -5, 5),
       text = element_text(family = "Lato"),
       # Axis labels
@@ -217,10 +232,11 @@ for (team_code in TeamAll$TeamCode) {
   e = e +
     guides(color = "none") +
     coord_cartesian(clip = "off")
-  e
+
   #### Save plot ####
   agg_png(glue("plots/E2023/{team_code}/player_{tolower(gsub('%', '_perc', stat))}.png"),
           height = 2000, width = 4000, units = "px", res = 200)
   print(e)
   dev.off()
+  }
 }
