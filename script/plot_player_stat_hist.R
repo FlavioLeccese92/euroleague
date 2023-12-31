@@ -19,9 +19,8 @@ Sys.setlocale(locale = "es_ES.UTF-8")
 
 #### Import Data ####
 
-TeamAll = getTeam() %>% distinct(code, images.crest) %>% 
-  mutate(images.crest = paste0(images.crest, "?width=250")) %>%
-  rename(team.code.against = code)
+TeamAll = getTeam() %>% distinct(TeamCode, ImagesCrest) %>% 
+  mutate(ImagesCrest = paste0(ImagesCrest, "?width=250"))
 
 #### Setting ggplot2 ####
 
@@ -34,88 +33,69 @@ sysfonts::font_add(family = "Font Awesome 6 Brands", regular = "www/fonts/fa-bra
 showtext_opts(dpi = 200)
 showtext_auto() 
 
-for (TeamCodeChosen in TeamAll$team.code.against) {
+for (team_code in TeamAll$TeamCode) {
   
-  TeamChosen = getTeam(TeamCodeChosen)
+  TeamChosen = getTeam(team_code)
   
-  TeamNameChosen = TeamChosen$name %>% print()
-  TeamPrimaryChosen = TeamChosen$primaryColor
-  TeamSecondaryChosen = TeamChosen$secondaryColor
-  TeamLogoChosen = glue("_temp/{TeamCodeChosen}/{TeamCodeChosen}-logo.png")
+  TeamNameChosen = TeamChosen$TeamName %>% print()
+  TeamPrimaryChosen = TeamChosen$PrimaryColor
+  TeamSecondaryChosen = TeamChosen$SecondaryColor
+  TeamLogoChosen = glue("_temp/{team_code}/{team_code}-logo.png")
   
-  GamesPlayed = getTeamGames(TeamCodeChosen) %>%
-    filter(status == "result") %>% 
-    mutate(TeamCodeChosen.win = ifelse((TeamCodeChosen == home.code) == (home.score > away.score), "Win", "Loss"),
-           team.code.against = ifelse(TeamCodeChosen == home.code, away.code, home.code),
-           team.home.away = ifelse((TeamCodeChosen == home.code), "Home", "Away"),
-           game.date = as.Date(date)) %>% 
-    distinct(round.round, code, team.code.against, team.home.away, TeamCodeChosen.win, game.date) %>% 
-    left_join(TeamAll, by = "team.code.against")
+  TeamPeople = getTeamPeople(team_code) %>% 
+    filter(TypeName == "Player") %>%
+    mutate(Player_ID = trimws(PersonCode),
+           ImagesHeadshot = ifelse(is.na(ImagesHeadshot),
+                                   "www/images/missing-player.png",
+                                   glue("_temp/{team_code}/{Player_ID}.png")),
+           ActivePlayer = as.Date(EndDate) >= Sys.Date()) %>% 
+    distinct(Player_ID, ImagesHeadshot, ActivePlayer)
   
-  TeamPeople = getTeamPeople(TeamCodeChosen) %>% 
-    filter(typeName == "Player") %>%
-    mutate(Player_ID = trimws(person.code),
-           images.headshot = ifelse(is.na(images.headshot),
-                                    "www/images/missing-player.png",
-                                    glue("_temp/{TeamCodeChosen}/{Player_ID}.png")),
-           active.player = as.Date(endDate) >= Sys.Date()) %>% 
-    distinct(Player_ID, images.headshot, active.player)
-  
-  PlayerStats = NULL
-  for (i in 1:nrow(GamesPlayed)) {
-    PlayerStats = bind_rows(
-      PlayerStats,
-      getGameBoxScore(GamesPlayed$code[i]) %>% .[["PlayerStats"]] %>% filter(Team == TeamCodeChosen) %>% 
-        mutate(round.round = GamesPlayed$round.round[i],
-               Player_ID = trimws(gsub("P", "", Player_ID)), .before = 1)
-    )
-  }
-  PlayerStats = PlayerStats %>%
-    left_join(GamesPlayed, by = "round.round") %>%
+  PlayerStats = GetPlayerAllStats(team_code) %>%
     left_join(TeamPeople, by = "Player_ID") %>%
-    filter(active.player) %>%
+    left_join(TeamAll, by = c("TeamCodeAgainst" = "TeamCode")) %>%
+    filter(ActivePlayer) %>%
     mutate(Player = paste0(gsub(".*, ", "", Player), " ", gsub(",.*", "", Player), " #", Dorsal))
   
   #### Setup plot ####
-  
-  stat = "Valuation"
-  YEnd = case_when(stat == "Points" ~ 40,
-                   stat ==  "Valuation" ~ 45,
-                   TRUE ~ NA)
+  stat = "2FG%"; gstat = glue("G{stat}")
+  StatsRangeForPlot = StatsRange %>% filter(Stat == stat)
+  YStart = StatsRangeForPlot$Min
+  YEnd = StatsRangeForPlot$Max
+  YBy = StatsRangeForPlot$By
   
   OffsetY = 0.2*YEnd # Bottom and Upper shift to make space for team images
   OffsetX = 5 # Left shift to make space for player image
   
   LastN = 16 # Last N rounds to plot
   
-  RangeX = range(PlayerStats$round.round) # Range of rounds for chosen team, season and competition
+  RangeX = range(PlayerStats$Round) # Range of rounds for chosen team, season and competition
   XStart = RangeX[2] - LastN + 1 # Starting x for actual data plot
   XEnd = RangeX[2] # Ending x for actual data plot
   XLowerLimit = RangeX[2] - LastN - OffsetX # Lower limit for x axis (player image + data)
   XUpperLimit = RangeX[2] + 2 # Upper limit for x axis (data + y axis annotation)
   YLowerLimit = 0 # Lower limit for y axis (data + middle space for teams logo + spacing)
   YUpperLimit = YEnd + 2*OffsetY # Upper limit for y axis (data + middle space for teams logo + spacing)
-  GameRangeDate = format(sort(unique(PlayerStats$game.date)), "%d %b %Y")[c(XStart, XEnd)] # Format date of games
+  GameRangeDate = format(sort(unique(PlayerStats$GameDate)), "%d %b %Y")[c(XStart, XEnd)] # Format date of games
   
-  BreaksY = OffsetY + seq(0, YEnd, 10)
-  LabelsY = seq(0, YEnd, 10)
+  BreaksY = OffsetY + seq(0, YEnd, YBy)
+  LabelsY = seq(0, YEnd, YBy)
   
-  PlayerStatsForPlot = PlayerStats %>% 
-    group_by(Player) %>%
-    filter(Minutes  != "DNP") %>%
-    mutate(n.games = n(),
-           mean.stats = mean(!!sym(stat)) %>% round(., 2),
-           stat = !!as.symbol(stat) + OffsetY,
-           Player = paste0(Player, " (avg ", mean.stats, " / ", n.games, " games)"),
-           mean.stats = mean.stats %>% ifelse(n.games > 6, ., -30)) %>% 
+  PlayerStatsForPlot = PlayerStats %>%
+    select(everything(),
+           stat = {{stat}}, gstat = {{gstat}}) %>% 
+    mutate(Player = paste0(Player, " (avg ", gstat, " / ", GP, " games)"),
+           stat = case_when(stat > 0 ~ stat + OffsetY, 
+                            stat < 0 ~ stat - OffsetY, TRUE ~ OffsetY),
+           gstat = gstat %>% ifelse(GP > 6, ., -30)) %>% 
     ungroup() %>%
-    filter(round.round > XEnd - LastN) %>% 
-    arrange(desc(mean.stats)) %>% 
-    filter(Player %in% unique(.$Player)[1:16]) %>%
+    filter(Round > XEnd - LastN) %>% 
+    arrange(desc(gstat)) %>% 
+    filter(Player %in% unique(.$Player)[1:16]) %>% 
     mutate(Player = factor(Player, levels = unique(.$Player))) %>% 
-    arrange(round.round) %>% 
-    distinct(round.round, game.date, Player, stat,
-             team.home.away, TeamCodeChosen.win, images.headshot, images.crest)
+    arrange(Round) %>% 
+    distinct(Round, GameDate, Player, stat,
+             HomeAway, WinLoss, ImagesHeadshot, ImagesCrest)
   
   ZPlayers = unique(PlayerStatsForPlot$Player) # Facet unique players
   
@@ -124,26 +104,26 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
                          Player = ZPlayers) %>% 
     as_tibble() %>%
     mutate(YEnd = YStart, XStart = XStart - OffsetX - 1, XEnd = XEnd,
-           YLabel = YStart - OffsetY)
+           YLabel = YStart - OffsetY*sign(YStart))
   
-  # Data for points above bars (+3) corresponding to Home/Away Location
+  # Data for points above/below bars (+/- 3) corresponding to Home/Away Location
   TeamHome = PlayerStatsForPlot %>% 
-    distinct(Player, round.round, team.home.away, stat) %>% 
-    mutate(stat = 3 + stat)
+    distinct(Player, Round, HomeAway, stat) %>% 
+    mutate(stat = YUpperLimit/20 + stat)
   
   # Data for Team Against images, showing in the middle of plot
   TeamAgainstImage = PlayerStatsForPlot %>% 
-    distinct(Player, round.round, images.crest) %>% 
+    distinct(Player, Round, ImagesCrest) %>% 
     mutate(stat = OffsetY/2)
   
-  # Data for Player image, showing on the left side (XLowerLimit + 2)
+  # Data for Player image, showing on the left side (XLowerLimit + 3)
   PlayerImage = PlayerStatsForPlot %>% 
-    distinct(Player, images.headshot) %>% 
-    mutate(round.round = XLowerLimit + 3, stat = (YUpperLimit+YLowerLimit)/2*0.9)
+    distinct(Player, ImagesHeadshot) %>% 
+    mutate(Round = XLowerLimit + 2.5, stat = YUpperLimit*0.5)
   
   # Plot title, subtitle and caption
   PlotTitle = glue("<span>{stat}</span><br>
-                    <span style = 'font-size: 20px'>{TeamNameChosen}
+                    <span style = 'font-size: 20px'>{team_code}
                     | round {XStart} - {XEnd} | {GameRangeDate[1]} - {GameRangeDate[2]}</span>")
   
   PlotSubtitle = glue("<span><img src = '{TeamLogoChosen}' height='50'></span>
@@ -163,7 +143,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   # Initialize
   e = ggplot(data = PlayerStatsForPlot, 
-             aes(x = round.round, y = stat, group = Player))
+             aes(x = Round, y = stat, group = Player))
   
   # Draw horizontal lines + y labels + plot polygon left (aesthetic choice) 
   e = e +
@@ -178,7 +158,7 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   
   # Draw bars for statistics + scale fill values + cover central part of bars with background
   e = e + 
-    geom_bar(aes(fill = TeamCodeChosen.win), stat = "identity", linewidth = 0.75, alpha = 0.8) +
+    geom_bar(aes(fill = WinLoss), stat = "identity", linewidth = 0.75, alpha = 0.8) +
     scale_fill_manual("Match Result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
     geom_rect(xmin = XStart - 0.5, xmax = XEnd + 0.5,
               ymin = 0, ymax = OffsetY - 0.5, fill = "grey90")
@@ -186,13 +166,13 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   # Draw points for Home/Away location + new scale fill values
   e = e +
     new_scale("fill") +
-    geom_point(data = TeamHome, aes(fill = team.home.away), shape = 21, alpha = 0.50) +
+    geom_point(data = TeamHome, aes(fill = HomeAway), shape = 21, alpha = 0.50) +
     scale_fill_manual("Match Location", values = c("Home" = "black", "Away" = "white"))
   
   # Plot player image + team against images in the middle
   e = e +
-    geom_image(data = TeamAgainstImage, aes(image = images.crest), size = 0.1) +
-    geom_image(data = PlayerImage, aes(image = images.headshot), size = 0.7,
+    geom_image(data = TeamAgainstImage, aes(image = ImagesCrest), size = 0.1) +
+    geom_image(data = PlayerImage, aes(image = ImagesHeadshot), size = 0.8,
                image_fun = function(img) {magick::image_fx(img, expression = "1*a", channel = "alpha")})
   
   # Facet by Player + general theme setting
@@ -237,9 +217,9 @@ for (TeamCodeChosen in TeamAll$team.code.against) {
   e = e +
     guides(color = "none") +
     coord_cartesian(clip = "off")
-  
+  e
   #### Save plot ####
-  agg_png(glue("plots/E2023/{TeamCodeChosen}/player_{tolower(stat)}.png"),
+  agg_png(glue("plots/E2023/{team_code}/player_{tolower(gsub('%', '_perc', stat))}.png"),
           height = 2000, width = 4000, units = "px", res = 200)
   print(e)
   dev.off()
