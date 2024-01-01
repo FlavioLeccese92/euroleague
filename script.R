@@ -241,7 +241,10 @@ GetPlayerAllStats = function(team_code, game_status = "result") {
     mutate(`GFG%` = 100*((`G2FGM` + `G3FGM`)/(`G2FGA` + `G3FGA`)) %>% round(4),
            `G2FG%` = 100*(`G2FGM`/`G2FGA`) %>% round(4),
            `G3FG%` = 100*(`G3FGM`/`G3FGA`) %>% round(4),
-           `GFTG%` = 100*(`GFTM`/`GFTA`) %>% round(4)) %>% 
+           `GFTG%` = 100*(`GFTM`/`GFTA`) %>% round(4),
+           GPIR = (GPIR/GP) %>% round(2),
+           GPM = (GPM/GP) %>% round(2),
+           GPTS = (GPTS/GP) %>% round(2)) %>% 
     ungroup() %>% 
     mutate(across(everything(), ~ifelse(is.nan(.), NA, .))) %>% 
     left_join(GamesPlayed, by = c("TeamCode", "GameCode")) %>%
@@ -253,14 +256,15 @@ GetPlayerAllStats = function(team_code, game_status = "result") {
 ### Utils ###
 
 StatsRange = tibble(
-  Stat = c("PM", "3FG%", "2FG%", "FTG%"),
-  Min = c(-30, 0, 0, 0),
-  Max = c(30, 100, 100, 100),
-  By = c(15, 20, 20, 20),
-  TopMargin = c(10, 15, 15, 15),
-  BottomMargin = c(10, 10, 10, 10),
-  MiddleOffset = c(15, 0, 0, 0),
-  BottomOffset = c(0, 10, 10, 10)
+  Stat = c("PM", "FG%", "3FG%", "2FG%", "FTG%", "PTS", "PIR"),
+  Min = c(-30, 0, 0, 0, 0, 0, 0),
+  Max = c(30, 100, 100, 100, 100, 40, 50),
+  By = c(15, 20, 20, 20, 20, 10, 10),
+  TopMargin = c(10, 15, 15, 15, 15, 15, 15),
+  BottomMargin = c(10, 10, 10, 10, 10, 10, 10),
+  MiddleOffset = c(15, 0, 0, 0, 0, 0, 0),
+  BottomOffset = c(0, 10, 10, 10, 10, 10, 10),
+  Unit = c("", "%", "%", "%", "%", "", "")
 )
 
 TextFormat = function(x){

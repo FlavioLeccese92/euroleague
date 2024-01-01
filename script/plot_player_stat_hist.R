@@ -58,7 +58,7 @@ for (team_code in TeamAll$TeamCode) {
     mutate(Player = paste0(gsub(".*, ", "", Player), " ", gsub(",.*", "", Player), " #", Dorsal))
   
   #### Setup plot ####
-  for (stat in c("PM", "3FG%", "2FG%", "FTG%")) {
+  for (stat in c("PM", "FG%", "3FG%", "2FG%", "FTG%", "PTS", "PIR")) {
   # stat = "3FG%"; 
   print(stat)
   gstat = glue("G{stat}")
@@ -68,7 +68,11 @@ for (team_code in TeamAll$TeamCode) {
   YStart = StatsRangeForPlot$Min; YEnd = StatsRangeForPlot$Max; YBy = StatsRangeForPlot$By
   BottomMargin = StatsRangeForPlot$BottomMargin; TopMargin = StatsRangeForPlot$TopMargin
   BottomOffset = StatsRangeForPlot$BottomOffset; MiddleOffset = StatsRangeForPlot$MiddleOffset
+  Unit = StatsRangeForPlot$Unit
   if (MiddleOffset == 0) {
+    BottomMargin = BottomMargin/100*(YEnd - YStart)
+    BottomOffset = BottomOffset/100*(YEnd - YStart)
+    TopMargin = TopMargin/100*(YEnd - YStart)
     YUpperZero = BottomMargin + BottomOffset; YLowerZero = 0
     YUpperLimit = YEnd + BottomMargin + BottomOffset + TopMargin; YLowerLimit = YStart
     BreaksY = BottomMargin + BottomOffset + seq(0, YEnd, YBy)
@@ -95,15 +99,16 @@ for (team_code in TeamAll$TeamCode) {
   
   PlayerStatsForPlot = PlayerStats %>%
     select(everything(),
-           stat = {{stat}}, gstat = {{gstat}}) %>% 
-    mutate(Player = paste0(Player, " (avg ", gstat, " / ", GP, " games)"),
-           stat = case_when(stat > 0 ~ stat + ShiftStat, 
+           stat = {{stat}}, gstat = {{gstat}}) %>%
+    mutate(stat = case_when(stat > 0 ~ stat + ShiftStat, 
                             stat < 0 ~ stat - ShiftStat,
                             TRUE ~ ShiftStat),
-           gstat = gstat %>% ifelse(GP > 6, ., -30)) %>% 
+           gstat = gstat %>% ifelse(GP > 6, ., NA)) %>% 
     ungroup() %>%
-    filter(Round > XEnd - LastN) %>% 
+    filter(Round > XEnd - LastN)%>% 
     arrange(desc(gstat)) %>% 
+    mutate(gstat = gstat %>% ifelse(is.na(.), "-", .),
+           Player = glue("{Player} (avg {gstat}{Unit} / {GP} games)"))  %>% 
     filter(Player %in% unique(.$Player)[1:16]) %>% 
     mutate(Player = factor(Player, levels = unique(.$Player))) %>% 
     arrange(Round) %>% 
@@ -116,8 +121,8 @@ for (team_code in TeamAll$TeamCode) {
   SegmentY = expand.grid(YStart = BreaksY,
                          Player = ZPlayers) %>% 
     as_tibble() %>%
-    mutate(YEnd = YStart, XStart = XStart - OffsetX - 1, XEnd = XEnd,
-           YLabel = YStart - sign(YStart)*ShiftStat)
+    mutate(YEnd = YStart, XStart = XStart - 1.5, XEnd = XEnd,
+           YLabel = glue("{YStart - sign(YStart)*ShiftStat}{Unit}"))
   
   # Data for points above/below bars (+/- 3) corresponding to Home/Away Location
   TeamHome = PlayerStatsForPlot %>% 
@@ -162,11 +167,11 @@ for (team_code in TeamAll$TeamCode) {
   # Draw horizontal lines + y labels + plot polygon left (aesthetic choice) 
   e = e +
     geom_link(data = SegmentY, aes(x = XStart, xend = XEnd + 0.5, y = YStart, yend = YEnd,
-                                   colour = after_stat(index)), linewidth = 0.3) +
-    geom_text(data = SegmentY, aes(y = YStart, label = YLabel), colour = TeamPrimaryChosen, x = XEnd + 1,
-              size = 2.5) +
-    scale_colour_gradient2(low =  "#f5f5f5", mid = "#f5f5f5", high = TeamPrimaryChosen) +
-    annotate(geom = "polygon", fill = "#f5f5f5",
+                                   colour = after_stat(index)), linewidth = 0.2) +
+    geom_text(data = SegmentY, aes(y = YStart, label = YLabel), colour = "#404040", x = XEnd + 1.8,
+              size = 2.5, hjust = 1) +
+    scale_colour_gradient(low = TeamPrimaryChosen, high = "#404040") +
+    annotate(geom = "polygon", fill = "#eeede9",
              x = c(XLowerLimit, XLowerLimit, XStart - 1.5, XStart), 
              y = c(YUpperLimit, YLowerLimit, YLowerLimit, YUpperLimit))
   
@@ -175,13 +180,13 @@ for (team_code in TeamAll$TeamCode) {
     geom_bar(aes(fill = WinLoss), stat = "identity", linewidth = 0.75, alpha = 0.8) +
     scale_fill_manual("Match Result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
     geom_rect(xmin = XStart - 0.5, xmax = XEnd + 0.5,
-              ymin = YLowerZero, ymax = YUpperZero - 1, fill = "grey90")
+              ymin = YLowerZero - sign(YLowerZero)*0.4, ymax = YUpperZero - 0.5, fill = "#e2e7ea")
   
   # Draw points for Home/Away location + new scale fill values
   e = e +
     new_scale("fill") +
     geom_point(data = TeamHome, aes(fill = HomeAway), shape = 21, alpha = 0.50) +
-    scale_fill_manual("Match Location", values = c("Home" = "#111111", "Away" = "#f5f5f5"))
+    scale_fill_manual("Match Location", values = c("Home" = "#404040", "Away" = "#eeede9"))
   
   # Plot player image + team against images in the middle
   e = e +
@@ -198,10 +203,10 @@ for (team_code in TeamAll$TeamCode) {
     theme(
       # General
       panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
-      panel.background = element_rect_round(fill = "grey90"),
-      plot.background = element_rect(fill = "#f5f5f5"),
-      plot.margin = margin(20, 5, -5, 5),
-      text = element_text(family = "Lato"),
+      panel.background = element_rect_round(fill = "#e2e7ea"),
+      plot.background = element_rect(fill = "#eeede9"),
+      plot.margin = margin(32, 15, 8, 17),
+      text = element_text(color = "#404040", family = "Lato"),
       # Axis labels
       axis.ticks = element_blank(),
       # axis.title.y = element_text(margin = margin(l = 5, r = 10)),
@@ -210,7 +215,10 @@ for (team_code in TeamAll$TeamCode) {
       # axis.title.x = element_text(margin = margin(t = 10, b = 5)),
       axis.title.x = element_blank(),
       axis.text.x = element_blank(),
-      # Legend
+      # Legend,
+      legend.background = element_blank(),
+      legend.box.background = element_blank(),
+      legend.key = element_blank(),
       legend.position = 'bottom', 
       legend.justification = 'left',
       legend.direction = 'horizontal',
@@ -235,7 +243,7 @@ for (team_code in TeamAll$TeamCode) {
 
   #### Save plot ####
   agg_png(glue("plots/E2023/{team_code}/player_{tolower(gsub('%', '_perc', stat))}.png"),
-          height = 2000, width = 4000, units = "px", res = 200)
+          height = 2000, width = 4100, units = "px", res = 200)
   print(e)
   dev.off()
   }
