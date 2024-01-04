@@ -48,11 +48,11 @@ for (team_code in TeamAll$TeamCode) {
            ImagesHeadshot = ifelse(is.na(ImagesHeadshot),
                                    "www/images/missing-player.png",
                                    glue("_temp/{team_code}/{Player_ID}.png")),
-           ActivePlayer = as.Date(EndDate) >= Sys.Date()) %>% 
+           ActivePlayer = as.Date(EndDate) >= Sys.Date()) %>%
     distinct(Player_ID, Player, ImagesHeadshot, ActivePlayer)
   
-  PlayerStats = GetPlayerAllStats(team_code) %>%
-    left_join(TeamPeople, by = c("Player", "Player_ID")) %>%
+  PlayerStats = GetPlayerAllStats(team_code) %>% select(-Player) %>%
+    left_join(TeamPeople, by = c("Player_ID")) %>%
     left_join(TeamAll, by = c("TeamCodeAgainst" = "TeamCode")) %>%
     filter(ActivePlayer)
   
@@ -196,7 +196,7 @@ for (team_code in TeamAll$TeamCode) {
   
   # Facet by Player + general theme setting
   e = e +
-    facet_wrap(~Player, ncol = 4, scales = 'free') +
+    facet_wrap(~Player, ncol = 4, scales = 'free', drop = FALSE) +
     scale_y_continuous(limits = c(YLowerLimit, YUpperLimit), 
                        breaks = BreaksY, labels = LabelsY, expand = c(0, 0)) +
     scale_x_continuous(limits = c(XLowerLimit, XUpperLimit), expand = c(0, 0)) +
