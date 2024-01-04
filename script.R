@@ -23,36 +23,32 @@ getGameHeader = function(game_code, season_code = "E2023"){
 
 # getGameBoxScore
 getGameBoxScore = function(game_code, season_code = "E2023"){
-  out = "https://live.euroleague.net/api/BoxScore?" %>% 
+  getin = "https://live.euroleague.net/api/BoxScore?" %>% 
     glue("gamecode={game_code}&seasoncode={season_code}&temp={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.)
   
-  out[["Team"]] = out$Stats$Team
-  out[["Coach"]] = out$Stats$Coach
-  out[["EndOfQuarter"]] = out[["EndOfQuarter"]] %>% as_tibble() %>% rename_with(TextFormat)
-  out[["ByQuarter"]] = out[["ByQuarter"]] %>% as_tibble() %>% rename_with(TextFormat)
+  out = NULL
+  out[["Team"]] = getin$Stats$Team
+  out[["Coach"]] = getin$Stats$Coach
+  out[["EndOfQuarter"]] = getin[["EndOfQuarter"]] %>% as_tibble() %>% rename_with(TextFormat)
+  out[["ByQuarter"]] = getin[["ByQuarter"]] %>% as_tibble() %>% rename_with(TextFormat)
   
-  out[["PlayerStats"]] = out$Stats$PlayersStats %>% bind_rows() %>% as_tibble() %>%
-    bind_cols(GameCode = game_code) %>% 
-    select(GameCode, TeamCode = Team, Player_ID, Player, Dorsal, Minutes, PIR = Valuation, PM = Plusminus, PTS = Points,
-           '2FGM' = FieldGoalsMade2, '2FGA' = FieldGoalsAttempted2,
-           '3FGM' = FieldGoalsMade3, '3FGA' = FieldGoalsAttempted3,
-           'FTM' = FreeThrowsMade, 'FTA' = FreeThrowsAttempted,
-           REB = TotalRebounds, OREB = OffensiveRebounds, DREP = DefensiveRebounds,
-           AST = Assistances, STL = Steals, BLK = BlocksFavour, TO = Turnovers, 
-           FC = FoulsCommited, FR = FoulsReceived) %>% 
+  out[["PlayerStats"]] = getin$Stats$PlayersStats %>% bind_rows() %>% as_tibble() %>%
+    bind_cols(GameCode = game_code, .) %>% 
+    rename(TeamCode = Team) %>% 
+    rename_stat() %>% 
     filter(Minutes != "DNP") %>% 
-    mutate(Seconds = period_to_seconds(ms(Minutes)), .after = "Minutes",
+    mutate(Player = paste0(gsub(".*, ", "", Player), " ", gsub(",.*", "", Player), " #", Dorsal),
+           Seconds = period_to_seconds(ms(Minutes)), .after = "Minutes",
            Player_ID = trimws(gsub("P", "", Player_ID)),
-           .keep = "unused") %>% 
+           .keep = "unused") %>%
     mutate(`FG%` = 100*((`2FGM` + `3FGM`)/(`2FGA` + `3FGA`)) %>% round(4),
            `2FG%` = 100*(`2FGM`/`2FGA`) %>% round(4),
            `3FG%` = 100*(`3FGM`/`3FGA`) %>% round(4),
-           `FTG%` = 100*(`FTM`/`FTA`) %>% round(4)) %>% 
+           `FT%` = 100*(`FTM`/`FTA`) %>% round(4)) %>% 
     mutate(across(everything(), ~ifelse(is.nan(.), NA, .)))
   
-  out[["TeamStats"]] = out$Stats$totr %>% rename_with(TextFormat)
-  out$Stats = NULL
+  out[["TeamStats"]] = getin$Stats$totr %>% rename_with(TextFormat)
   
   return(out)
 }
@@ -107,68 +103,118 @@ getGameEvolution = function(game_code, season_code = "E2023"){
 
 # getTeam
 getTeam = function(team_code = "", competition_code = "E", season_code = "E2023"){
-  "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    glue("{competition_code}/seasons/{season_code}/clubs/{team_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
-    { if(is.null(dim(.)))
-      unlist(.) %>% t() %>% 
-        as_tibble()
-      else as_tibble(.) %>%
-        unnest(cols = c(images, country), names_sep = ".")} %>% 
-    rename_with(TextFormat) %>%
-    rename(TeamCode = Code, TeamName = Name) %>%
-    return()
+  out = NULL
+  for (tc in team_code) {
+    out = bind_rows(out,
+      "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
+        glue("{competition_code}/seasons/{season_code}/clubs/{tc}") %>%
+        GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
+        { if(is.null(dim(.)))
+          unlist(.) %>% t() %>% 
+            as_tibble()
+          else as_tibble(.) %>%
+            unnest(cols = c(images, country), names_sep = ".")} %>% 
+        rename_with(TextFormat) %>%
+        rename(TeamCode = Code, TeamName = Name)
+    )
+  }
+  return(out)
 }
 
 # getTeamPeople
 getTeamPeople = function(team_code, competition_code = "E", season_code = "E2023"){
-  "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    glue("{competition_code}/seasons/{season_code}/clubs/{team_code}/people") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
-    as_tibble() %>%
-    unnest(cols = c(person, images, club, season), names_sep = ".") %>% 
-    unnest(cols = c(person.country, person.birthCountry,
-                    person.images, club.images), names_sep = ".") %>% 
-    rename_with(TextFormat) %>%
-    return()
+  out = NULL
+  for (tc in team_code) {
+    out = bind_rows(out,
+      "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
+        glue("{competition_code}/seasons/{season_code}/clubs/{tc}/people") %>%
+        GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
+        as_tibble() %>%
+        unnest(cols = c(person, images, club, season), names_sep = ".") %>% 
+        unnest(cols = c(person.country, person.birthCountry,
+                        person.images, club.images), names_sep = ".") %>% 
+        rename_with(TextFormat) %>% 
+        mutate(TeamCode = tc,
+               PersonCode = trimws(PersonCode),
+               Player = paste0(gsub(".*, ", "", PersonName), " ", gsub(",.*", "", PersonName), " #", Dorsal),
+               .before = 1) 
+    )
+  }
+  return(out)
 }
 
 # getTeamGames
 getTeamGames = function(team_code, competition_code = "E", season_code = "E2023"){
-  "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    glue("{competition_code}/seasons/{season_code}/games?TeamCode={team_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
-    as_tibble() %>%
-    unnest(cols = c(season, competition, group, phaseType, round, home,
-                    away, venue),
-           names_sep = ".") %>% 
-    unnest(c(home.quarters, home.coach, home.imageUrls,
-             away.quarters, away.coach, away.imageUrls),
-           names_sep = ".") %>% select(-broadcasters) %>%
-    rename_with(TextFormat) %>%
-    rename(GameId = Id, GameCode = Code, GameDate = Date, GameStatus = Status, Round = RoundRound) %>% 
-    return()
+  out = NULL
+  for (tc in team_code) {
+    out = bind_rows(out,
+      "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
+        glue("{competition_code}/seasons/{season_code}/games?TeamCode={tc}") %>%
+        GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
+        as_tibble() %>%
+        unnest(cols = c(season, competition, group, phaseType, round, home,
+                        away, venue),
+               names_sep = ".") %>% 
+        unnest(c(home.quarters, home.coach, home.imageUrls,
+                 away.quarters, away.coach, away.imageUrls),
+               names_sep = ".") %>% select(-broadcasters) %>%
+        rename_with(TextFormat) %>%
+        rename(GameId = Id, GameCode = Code, GameDate = Date, GameStatus = Status, Round = RoundRound) %>% 
+        mutate(TeamCode = tc, .before = 1)
+    )
+  }
+  return(out)
 }
 
 # getTeamStats
-getTeamStats = function(team_code, competition_code = "E", season_code = "E2023", phase_type = ""){
-  out = "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
-    glue("{competition_code}/seasons/{season_code}clubs/{team_code}/people/stats?phaseTypeCode={phase_type}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.)
+ getTeamStats = function(team_code, competition_code = "E", season_code = "E2023", phase_type = ""){
   
-  out[["playerStats"]] = out[["playerStats"]] %>% as_tibble() %>%
-    {if (nrow(.) > 0) unnest(., cols = c(player, accumulated, averagePerGame),
-           names_sep = ".") %>% rename_with(TextFormat) else NULL }
+  out = NULL
+  for (tc in team_code){
+    getin = "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
+      glue("{competition_code}/seasons/{season_code}/clubs/{tc}/people/stats?phaseTypeCode={phase_type}") %>%
+      GET() %>% .$content %>% rawToChar() %>% fromJSON(.)
+    
+    out[["PlayerAccumulated"]] = bind_rows(
+      out[["PlayerAccumulated"]],
+      getin[["playerStats"]] %>% as_tibble() %>% 
+        select(-averagePerGame) %>%
+        unnest(., cols = c(player, accumulated), names_sep = ".") %>%
+        rename_with(function(x) {gsub("accumulated\\.", "", x)} ) %>% 
+        rename_stat() %>% 
+        mutate(TeamCode = tc,
+               Player_ID = trimws(PlayerCode), .before = 1, .keep = "unused") %>% 
+        mutate(across(contains("%"), ~as.numeric(gsub("%", "", .))))
+    )
+    out[["PlayerAveragePerGame"]] = bind_rows(
+      out[["PlayerAveragePerGame"]],
+      getin[["playerStats"]] %>% as_tibble() %>% 
+        select(-accumulated) %>%
+        unnest(., cols = c(player, averagePerGame), names_sep = ".") %>%
+        rename_with(function(x) {gsub("averagePerGame\\.", "", x)}) %>% 
+        rename_stat() %>% 
+        mutate(TeamCode = tc,
+               Player_ID = trimws(PlayerCode), .before = 1, .keep = "unused") %>% 
+        mutate(across(contains("%"), ~as.numeric(gsub("%", "", .))))
+    )
+    out[["TeamAccumulated"]] = bind_rows(
+      out[["TeamAccumulated"]],
+      getin[["accumulated"]] %>% as_tibble() %>% unnest(cols = everything()) %>%
+        mutate(TeamCode = tc, .before = 1) %>% rename_stat() %>% 
+        mutate(across(contains("%"), ~as.numeric(gsub("%", "", .))))
+    )
+    out[["TeamAveragePerGame"]] = bind_rows(
+      out[["TeamAveragePerGame"]],
+      getin[["averagePerGame"]] %>% as_tibble() %>% unnest(cols = everything()) %>%
+        mutate(TeamCode = tc, .before = 1) %>% rename_stat() %>% 
+        mutate(across(contains("%"), ~as.numeric(gsub("%", "", .))))
+    )
+  }
   
-  out[["accumulated"]] = out[["accumulated"]] %>%
-    unlist() %>% t() %>% as_tibble() %>% rename_with(TextFormat)
-  out[["averagePerGame"]] = out[["averagePerGame"]] %>%
-    unlist() %>% t() %>% as_tibble() %>% rename_with(TextFormat)
-  out[["teamAccumulated"]] = out[["teamAccumulated"]] %>%
-    unlist() %>% t() %>% as_tibble() %>% rename_with(TextFormat)
-  out[["teamAveragePerGame"]] = out[["teamAveragePerGame"]] %>%
-    unlist() %>% t() %>% as_tibble() %>% rename_with(TextFormat)
-  
+  out[["PlayerAveragePer40"]] = 
+    out[["PlayerAccumulated"]] %>%
+    mutate(across(-c("TeamCode", contains("Player"), contains("%")),
+                  ~ round(40*60*./TimePlayed, 2)))
   return(out)
 }
 
@@ -217,54 +263,89 @@ GetCompetitionHistory = function(competition_code = "E"){
 GetPlayerAllStats = function(team_code, game_status = "result") {
   
   GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == game_status) %>%
-    mutate(WinLoss = ifelse((team_code == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
-           TeamCodeAgainst = ifelse(team_code == HomeCode, AwayCode, HomeCode),
-           HomeAway = ifelse((team_code == HomeCode), "Home", "Away"), 
+    mutate(WinLoss = ifelse((TeamCode == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
+           TeamCodeAgainst = ifelse(TeamCode == HomeCode, AwayCode, HomeCode),
+           HomeAway = ifelse((TeamCode == HomeCode), "Home", "Away"), 
            GameDate = as.Date(GameDate),
            TeamScore = ifelse(HomeAway == "Home", HomeScore, AwayScore),
-           TeamAgainstScore = ifelse(HomeAway == "Away", HomeScore, AwayScore),
-           TeamCode = team_code) %>% 
+           TeamAgainstScore = ifelse(HomeAway == "Away", HomeScore, AwayScore)) %>% 
     distinct(GameCode, Round, GameDate, TeamCode, TeamCodeAgainst, WinLoss, HomeAway, TeamScore, TeamAgainstScore)
   
   out = NULL
-  for (i in 1:nrow(GamesPlayed)) {
+  for (gp in unique(GamesPlayed$GameCode)) {
     out = bind_rows(
       out,
-      getGameBoxScore(GamesPlayed$GameCode[i]) %>% .[["PlayerStats"]] %>% filter(TeamCode == team_code)
+      getGameBoxScore(gp) %>% .[["PlayerStats"]] %>% filter(TeamCode %in% unique(GamesPlayed$TeamCode))
     )
   }
   
-  out = out %>%
-    group_by(TeamCode, Player_ID, Player, Dorsal) %>% 
+ out = out %>%
+    group_by(TeamCode, Player_ID, Player) %>% 
     mutate(across(-c("GameCode", contains("%")), ~sum(., na.rm = TRUE), .names = "G{.col}"),
            GP = n_distinct(GameCode)) %>% 
-    mutate(`GFG%` = 100*((`G2FGM` + `G3FGM`)/(`G2FGA` + `G3FGA`)) %>% round(4),
-           `G2FG%` = 100*(`G2FGM`/`G2FGA`) %>% round(4),
-           `G3FG%` = 100*(`G3FGM`/`G3FGA`) %>% round(4),
-           `GFTG%` = 100*(`GFTM`/`GFTA`) %>% round(4),
-           GPIR = (GPIR/GP) %>% round(2),
-           GPM = (GPM/GP) %>% round(2),
-           GPTS = (GPTS/GP) %>% round(2)) %>% 
+    mutate(`GFG%` = 100*(`G2FGM` + `G3FGM`)/(`G2FGA` + `G3FGA`),
+           `G2FG%` = 100*`G2FGM`/`G2FGA`,
+           `G3FG%` = 100*`G3FGM`/`G3FGA`,
+           `GFT%` = 100*`GFTM`/`GFTA`) %>% 
     ungroup() %>% 
-    mutate(across(everything(), ~ifelse(is.nan(.), NA, .))) %>% 
+    mutate(across(c("GPIR", "GPM", "GPTS", "GREB", "GOREB",
+                    "GDREB", "GAST", "GSTL", "GBLK", "GTO", "GFC", "GFR"),
+                  ~round(./GP, 2)),
+           across(ends_with("%"), ~round(., 2)),
+           across(everything(), ~ifelse(is.nan(.), NA, .))) %>% 
     left_join(GamesPlayed, by = c("TeamCode", "GameCode")) %>%
     rename_with(TextFormat)
   
   return(out)
 }
 
+
 ### Utils ###
+rename_stat = function(data) {
+
+  data = data %>% rename_with(TextFormat)
+  
+  exchange_table = tibble(
+    col_to = c("PIR", "PM", "PTS", "2FGM", "2FGA", "3FGM", "3FGA", 
+               "FTM", "FTA", "FGM", "FGA",
+               "REB", "OREB", "DREB", "AST", "STL", 
+               "BLK", "BLKA", "TO", "FC", "FR", "2FG%", "3FG%", "FTG%",
+               "GP", "AM", "AA"),
+    col_from = c("valuation", "plusminus", "points", "fieldgoalsmade2", 
+                 "fieldgoalsattempted2", "fieldgoalsmade3", "fieldgoalsattempted3", 
+                 "freethrowsmade", "freethrowsattempted", 
+                 "fieldgoalsmadetotal", "fieldgoalsattemptedtotal",
+                 "totalrebounds", "offensiverebounds", "defensiverebounds", "assistances", 
+                 "steals", "blocksfavour", "blocksagainst", "turnovers", "foulscommited",
+                 "foulsreceived", "twopointshootingpercentage",
+                 "threepointshootingpercentage", "freethrowshootingpercentage",
+                 "gamesplayed", "accuracymade", "accuracyattempted")
+  )
+  
+  names(data) = tibble(col_data = names(data)) %>% 
+    mutate(col_data_lower = col_data %>% tolower()) %>%
+    left_join(exchange_table, by = c("col_data_lower" = "col_from")) %>% 
+    mutate(col_to = col_to %>% ifelse(is.na(.), col_data, .)) %>% 
+    pull(col_to)
+  
+  return(data)
+}
 
 StatsRange = tibble(
-  Stat = c("PM", "FG%", "3FG%", "2FG%", "FTG%", "PTS", "PIR"),
+  Stat = c("PM", "FG%", "3FG%", "2FG%", "FT%", "PTS", "PIR"),
   Min = c(-30, 0, 0, 0, 0, 0, 0),
   Max = c(30, 100, 100, 100, 100, 40, 50),
+  GMin = c(-15, 0, 0, 0, 0, 0, 0),
+  GMax = c(15, 100, 100, 100, 100, 30, 30),
   By = c(15, 20, 20, 20, 20, 10, 10),
   TopMargin = c(10, 15, 15, 15, 15, 15, 15),
   BottomMargin = c(10, 10, 10, 10, 10, 10, 10),
   MiddleOffset = c(15, 0, 0, 0, 0, 0, 0),
   BottomOffset = c(0, 10, 10, 10, 10, 10, 10),
-  Unit = c("", "%", "%", "%", "%", "", "")
+  Unit = c("", "%", "%", "%", "%", "", ""),
+  Name = c("Plus-minus (PM)", "Total field goal % (FG%)", "3-points field goal % (3FG%)",
+           "2-points field goal % (2FG%)", "Free-throw % (FT%)", "Total points made (PTS)",
+           "Valuation (PIR)")
 )
 
 TextFormat = function(x){

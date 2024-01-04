@@ -15,7 +15,7 @@ library(ragg)
 library(elementalist) # devtools::install_github("teunbrand/elementalist")
 # library(magick) 
 
-Sys.setlocale(locale = "es_ES.UTF-8")
+Sys.setlocale(locale = "en_EN.UTF-8")
 
 #### Import Data ####
 
@@ -44,21 +44,20 @@ for (team_code in TeamAll$TeamCode) {
   
   TeamPeople = getTeamPeople(team_code) %>% 
     filter(TypeName == "Player") %>%
-    mutate(Player_ID = trimws(PersonCode),
+    mutate(Player_ID = PersonCode,
            ImagesHeadshot = ifelse(is.na(ImagesHeadshot),
                                    "www/images/missing-player.png",
                                    glue("_temp/{team_code}/{Player_ID}.png")),
            ActivePlayer = as.Date(EndDate) >= Sys.Date()) %>% 
-    distinct(Player_ID, ImagesHeadshot, ActivePlayer)
+    distinct(Player_ID, Player, ImagesHeadshot, ActivePlayer)
   
   PlayerStats = GetPlayerAllStats(team_code) %>%
-    left_join(TeamPeople, by = "Player_ID") %>%
+    left_join(TeamPeople, by = c("Player", "Player_ID")) %>%
     left_join(TeamAll, by = c("TeamCodeAgainst" = "TeamCode")) %>%
-    filter(ActivePlayer) %>%
-    mutate(Player = paste0(gsub(".*, ", "", Player), " ", gsub(",.*", "", Player), " #", Dorsal))
+    filter(ActivePlayer)
   
   #### Setup plot ####
-  for (stat in c("PM", "FG%", "3FG%", "2FG%", "FTG%", "PTS", "PIR")) {
+  for (stat in c("PM", "FG%", "3FG%", "2FG%", "FT%", "PTS", "PIR")) {
   # stat = "3FG%"; 
   print(stat)
   gstat = glue("G{stat}")
@@ -141,9 +140,9 @@ for (team_code in TeamAll$TeamCode) {
     mutate(Round = XLowerLimit + 2.5, stat = YCenter)
   
   # Plot title, subtitle and caption
-  PlotTitle = glue("<span>{stat}</span><br>
-                    <span style = 'font-size: 20px'>{team_code}
-                    | round {XStart} - {XEnd} | {GameRangeDate[1]} - {GameRangeDate[2]}</span>")
+  PlotTitle = glue("<span>{StatsRangeForPlot$Name}</span><br>
+                    <span style = 'font-size: 20px'>{TeamNameChosen}
+                    | Round {XStart} - {XEnd} | {GameRangeDate[1]} - {GameRangeDate[2]}</span>")
   
   PlotSubtitle = glue("<span><img src = '{TeamLogoChosen}' height='50'></span>
                        <span><img src = 'www/images/E2023-logo-vertical-black.png' height='50'></span>")
@@ -167,7 +166,7 @@ for (team_code in TeamAll$TeamCode) {
   # Draw horizontal lines + y labels + plot polygon left (aesthetic choice) 
   e = e +
     geom_link(data = SegmentY, aes(x = XStart, xend = XEnd + 0.5, y = YStart, yend = YEnd,
-                                   colour = after_stat(index)), linewidth = 0.2) +
+                                   colour = after_stat(index)), linewidth = 0.1) +
     geom_text(data = SegmentY, aes(y = YStart, label = YLabel), colour = "#404040", x = XEnd + 1.8,
               size = 2.5, hjust = 1) +
     scale_colour_gradient(low = TeamPrimaryChosen, high = "#404040") +
@@ -177,8 +176,9 @@ for (team_code in TeamAll$TeamCode) {
   
   # Draw bars for statistics + scale fill values + cover central part of bars with background
   e = e + 
-    geom_bar(aes(fill = WinLoss), stat = "identity", linewidth = 0.75, alpha = 0.8) +
-    scale_fill_manual("Match Result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
+    geom_bar(aes(fill = WinLoss), stat = "identity", 
+             linewidth = 0.75, colour = "#e2e7ea", alpha = 1, width = 0.65) +
+    scale_fill_manual("Match result", values = c("Win" = "#2EB086", "Loss" = "#C70D3A")) +
     geom_rect(xmin = XStart - 0.5, xmax = XEnd + 0.5,
               ymin = YLowerZero - sign(YLowerZero)*0.4, ymax = YUpperZero - 0.5, fill = "#e2e7ea")
   
@@ -186,7 +186,7 @@ for (team_code in TeamAll$TeamCode) {
   e = e +
     new_scale("fill") +
     geom_point(data = TeamHome, aes(fill = HomeAway), shape = 21, alpha = 0.50) +
-    scale_fill_manual("Match Location", values = c("Home" = "#404040", "Away" = "#eeede9"))
+    scale_fill_manual("Match location", values = c("Home" = "#404040", "Away" = "#eeede9"))
   
   # Plot player image + team against images in the middle
   e = e +
