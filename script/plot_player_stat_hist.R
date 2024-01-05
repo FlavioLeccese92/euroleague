@@ -19,7 +19,7 @@ Sys.setlocale(locale = "en_EN.UTF-8")
 
 #### Import Data ####
 
-TeamAll = getTeam() %>% distinct(TeamCode, ImagesCrest) %>% 
+TeamAll = getTeam() %>% distinct(TeamCode, TeamName, ImagesCrest) %>% 
   mutate(ImagesCrest = paste0(ImagesCrest, "?width=250"))
 
 #### Setting ggplot2 ####
@@ -109,7 +109,9 @@ for (team_code in TeamAll$TeamCode) {
     mutate(gstat = gstat %>% ifelse(is.na(.), "-", .),
            Player = glue("{Player} (avg {gstat}{Unit} / {GP} games)"))  %>% 
     filter(Player %in% unique(.$Player)[1:16]) %>% 
-    mutate(Player = factor(Player, levels = unique(.$Player))) %>% 
+    mutate(Player = factor(Player, levels = unique(.$Player)),
+           WinLoss = factor(WinLoss, levels = c("Win", "Loss")),
+           HomeAway = factor(HomeAway, levels = c("Home", "Away"))) %>% 
     arrange(Round) %>% 
     distinct(Round, GameDate, Player, stat,
              HomeAway, WinLoss, ImagesHeadshot, ImagesCrest)

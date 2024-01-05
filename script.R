@@ -364,7 +364,6 @@ getTeamAllStats = function(team_code) {
            across(ends_with("%"), ~round(., 2)),
            across(everything(), ~ifelse(is.nan(.), NA, .))) %>%
     rename_with(TextFormat)
-    
   
   return(out)
   
