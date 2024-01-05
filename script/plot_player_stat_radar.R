@@ -16,7 +16,7 @@ library(geomtextpath)
 library(elementalist) # devtools::install_github("teunbrand/elementalist")
 # library(magick) 
 
-Sys.setlocale(locale = "es_ES.UTF-8")
+Sys.setlocale(locale = "en_EN.UTF-8")
 
 #### Import Data ####
 
@@ -33,6 +33,8 @@ font_add_google("Inconsolata", "Inconsolata")
 sysfonts::font_add(family = "Font Awesome 6 Brands", regular = "www/fonts/fa-brands-400.ttf")
 showtext_opts(dpi = 200)
 showtext_auto()
+
+CompetitionRounds = GetCompetitionRounds() %>% filter(MinGameStartDate <= Sys.Date())
 
 TeamAllStats = getTeamStats(TeamAll$TeamCode)
 
@@ -97,8 +99,9 @@ for (team_code in TeamAll$TeamCode) {
       mutate(Stat = 4, y = 0)
     
     # Plot title, subtitle and caption
-    PlotTitle = glue("<span>Combined Statistics</span><br>
-                      <span style = 'font-size: 20px'>{TeamNameChosen} | All rounds | {type}</span>")
+    PlotTitle = glue("<span>Players combined statistics</span><br>
+                      <span style = 'font-size: 20px'>{TeamNameChosen} | Up to round {(max(CompetitionRounds$Round))} | 
+                 {as.Date(max(CompetitionRounds$MaxGameStartDate))} | {type}</span>")
     
     PlotSubtitle = glue("<span><img src = '{TeamLogoChosen}' height='50'></span>
                          <span><img src = 'www/images/E2023-logo-vertical-black.png' height='50'></span>")

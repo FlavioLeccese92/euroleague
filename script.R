@@ -48,7 +48,16 @@ getGameBoxScore = function(game_code, season_code = "E2023"){
            `FT%` = 100*(`FTM`/`FTA`) %>% round(4)) %>% 
     mutate(across(everything(), ~ifelse(is.nan(.), NA, .)))
   
-  out[["TeamStats"]] = getin$Stats$totr %>% rename_with(TextFormat)
+  out[["TeamStats"]] = getin$Stats$totr %>% as_tibble() %>% 
+    bind_cols(TeamCode = unique(out[["PlayerStats"]]$TeamCode), .) %>%
+    bind_cols(GameCode = game_code, .) %>% rename_stat() %>% 
+    mutate(Seconds = period_to_seconds(ms(Minutes)), .after = "Minutes",
+           .keep = "unused") %>%
+    mutate(`FG%` = 100*((`2FGM` + `3FGM`)/(`2FGA` + `3FGA`)) %>% round(4),
+           `2FG%` = 100*(`2FGM`/`2FGA`) %>% round(4),
+           `3FG%` = 100*(`3FGM`/`3FGA`) %>% round(4),
+           `FT%` = 100*(`FTM`/`FTA`) %>% round(4)) %>% 
+    mutate(across(everything(), ~ifelse(is.nan(.), NA, .)))
   
   return(out)
 }
@@ -167,7 +176,7 @@ getTeamGames = function(team_code, competition_code = "E", season_code = "E2023"
 }
 
 # getTeamStats
- getTeamStats = function(team_code, competition_code = "E", season_code = "E2023", phase_type = ""){
+getTeamStats = function(team_code, competition_code = "E", season_code = "E2023", phase_type = ""){
   
   out = NULL
   for (tc in team_code){
@@ -220,6 +229,30 @@ getTeamGames = function(team_code, competition_code = "E", season_code = "E2023"
 
 ### Competition ###
 
+# GetCompetitionStandings
+GetCompetitionStandings = function(competition_code = "E", season_code = "E2023", round){
+"https://feeds.incrowdsports.com/provider/euroleague-feeds/v3/competitions/" %>% 
+  glue("{competition_code}/seasons/{season_code}/rounds/{round}/basicstandings") %>%
+  GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$teams %>%
+  as_tibble()  %>%
+  unnest(cols = c(club), names_sep = ".") %>% 
+  unnest(c(club.images), names_sep = ".") %>%
+  rename_with(TextFormat) %>% 
+  return()
+}
+
+# GetCompetitionStreaks
+GetCompetitionStreaks = function(competition_code = "E", season_code = "E2023", round){
+  "https://feeds.incrowdsports.com/provider/euroleague-feeds/v3/competitions/" %>% 
+    glue("{competition_code}/seasons/{season_code}/rounds/{round}/streaks") %>%
+    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$teams %>%
+    as_tibble()  %>%
+    unnest(cols = c(club), names_sep = ".") %>% 
+    unnest(c(club.images), names_sep = ".") %>%
+    rename_with(TextFormat) %>% 
+    return()
+}
+ 
 # GetCompetitionRounds
 GetCompetitionRounds = function(competition_code = "E", season_code = "E2023"){
   "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
@@ -260,9 +293,9 @@ GetCompetitionHistory = function(competition_code = "E"){
 
 # GetPlayerAllStats
 
-GetPlayerAllStats = function(team_code, game_status = "result") {
+GetPlayerAllStats = function(team_code) {
   
-  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == game_status) %>%
+  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>%
     mutate(WinLoss = ifelse((TeamCode == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
            TeamCodeAgainst = ifelse(TeamCode == HomeCode, AwayCode, HomeCode),
            HomeAway = ifelse((TeamCode == HomeCode), "Home", "Away"), 
@@ -288,9 +321,7 @@ GetPlayerAllStats = function(team_code, game_status = "result") {
            `G3FG%` = 100*`G3FGM`/`G3FGA`,
            `GFT%` = 100*`GFTM`/`GFTA`) %>% 
     ungroup() %>% 
-    mutate(across(c("GPIR", "GPM", "GPTS", "GREB", "GOREB",
-                    "GDREB", "GAST", "GSTL", "GBLK", "GTO", "GFC", "GFR"),
-                  ~round(./GP, 2)),
+    mutate(across(-c("GameCode", "GP", ends_with("%")) & starts_with("G"), ~round(./GP, 2)),
            across(ends_with("%"), ~round(., 2)),
            across(everything(), ~ifelse(is.nan(.), NA, .))) %>% 
     left_join(GamesPlayed, by = c("TeamCode", "GameCode")) %>%
@@ -299,6 +330,45 @@ GetPlayerAllStats = function(team_code, game_status = "result") {
   return(out)
 }
 
+getTeamAllStats = function(team_code) {
+  
+  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>%
+    mutate(WinLoss = ifelse((TeamCode == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
+           TeamCodeAgainst = ifelse(TeamCode == HomeCode, AwayCode, HomeCode),
+           HomeAway = ifelse((TeamCode == HomeCode), "Home", "Away"), 
+           GameDate = as.Date(GameDate),
+           TeamScore = ifelse(HomeAway == "Home", HomeScore, AwayScore),
+           TeamAgainstScore = ifelse(HomeAway == "Away", HomeScore, AwayScore)) %>% 
+    distinct(GameCode, Round, GameDate, TeamCode, TeamCodeAgainst, WinLoss, HomeAway, TeamScore, TeamAgainstScore)
+  
+  out = NULL
+  for (gp in unique(GamesPlayed$GameCode)) {
+    out = bind_rows(
+      out,
+      getGameBoxScore(gp) %>% .[["TeamStats"]] %>% filter(TeamCode %in% unique(GamesPlayed$TeamCode))
+    )
+  }
+  
+  out = out %>%
+    left_join(GamesPlayed %>% distinct(GameCode, TeamCode, HomeAway, WinLoss), by = c("GameCode", "TeamCode")) %>% 
+    relocate(HomeAway, WinLoss, .after = TeamCode) %>%
+    group_by(TeamCode, HomeAway, WinLoss) %>% 
+    mutate(across(-c("GameCode", contains("%")), ~sum(., na.rm = TRUE), .names = "G{.col}"),
+           GP = n_distinct(GameCode)) %>% 
+    mutate(`GFG%` = 100*(`G2FGM` + `G3FGM`)/(`G2FGA` + `G3FGA`),
+           `G2FG%` = 100*`G2FGM`/`G2FGA`,
+           `G3FG%` = 100*`G3FGM`/`G3FGA`,
+           `GFT%` = 100*`GFTM`/`GFTA`) %>% 
+    ungroup() %>% 
+    mutate(across(-c("GameCode", "GP", ends_with("%")) & starts_with("G"), ~round(./GP, 2)),
+           across(ends_with("%"), ~round(., 2)),
+           across(everything(), ~ifelse(is.nan(.), NA, .))) %>%
+    rename_with(TextFormat)
+    
+  
+  return(out)
+  
+}
 
 ### Utils ###
 rename_stat = function(data) {
@@ -309,7 +379,7 @@ rename_stat = function(data) {
     col_to = c("PIR", "PM", "PTS", "2FGM", "2FGA", "3FGM", "3FGA", 
                "FTM", "FTA", "FGM", "FGA",
                "REB", "OREB", "DREB", "AST", "STL", 
-               "BLK", "BLKA", "TO", "FC", "FR", "2FG%", "3FG%", "FTG%",
+               "BLK", "BLKA", "TO", "FC", "FR", "2FG%", "3FG%", "FT%",
                "GP", "AM", "AA"),
     col_from = c("valuation", "plusminus", "points", "fieldgoalsmade2", 
                  "fieldgoalsattempted2", "fieldgoalsmade3", "fieldgoalsattempted3", 
