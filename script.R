@@ -1,5 +1,5 @@
 ### ------------------------------------------------------------------------ ###
-####------------------------------ PLUS-MINUS ------------------------------####
+####-------------------------------- SCRIPT --------------------------------####
 ### ------------------------------------------------------------------------ ###
 
 library(tidyr)
@@ -10,6 +10,7 @@ library(scales)
 library(glue)
 library(lubridate)
 library(stringr)
+
 ### Game ###
 
 # getGameHeader
@@ -17,7 +18,7 @@ getGameHeader = function(game_code, season_code = "E2023"){
   "https://live.euroleague.net/api/Header?" %>% 
     glue("gamecode={game_code}&seasoncode={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType1) %>%
     return()
 }
 
@@ -30,8 +31,8 @@ getGameBoxScore = function(game_code, season_code = "E2023"){
   out = NULL
   out[["Team"]] = getin$Stats$Team
   out[["Coach"]] = getin$Stats$Coach
-  out[["EndOfQuarter"]] = getin[["EndOfQuarter"]] %>% as_tibble() %>% rename_with(TextFormat)
-  out[["ByQuarter"]] = getin[["ByQuarter"]] %>% as_tibble() %>% rename_with(TextFormat)
+  out[["EndOfQuarter"]] = getin[["EndOfQuarter"]] %>% as_tibble() %>% rename_with(TextFormatType1)
+  out[["ByQuarter"]] = getin[["ByQuarter"]] %>% as_tibble() %>% rename_with(TextFormatType1)
   
   out[["PlayerStats"]] = getin$Stats$PlayersStats %>% bind_rows() %>% as_tibble() %>%
     bind_cols(GameCode = game_code, .) %>% 
@@ -68,7 +69,11 @@ getGamePoints = function(game_code, season_code = "E2023"){
     glue("gamecode={game_code}&seasoncode={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$Rows %>%
     as_tibble() %>%
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType2) %>%
+    mutate(Player_ID = trimws(gsub("P", "", Player_ID)),
+           Utc = as.POSIXct(Utc, format = "%Y%m%d%H%M%OS", tz = "UTC")) %>%
+    mutate(GameCode = game_code, 
+           TeamCode = trimws(Team), .keep = "unused", .before = 1) %>% 
     return()
 }
 
@@ -77,7 +82,7 @@ getGameRound = function(game_code, season_code = "E2023"){
   "https://live.euroleague.net/api/Round?" %>% 
     glue("gamecode={game_code}&seasoncode={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType1) %>%
     return()
 }
 
@@ -86,16 +91,15 @@ getGamePlayers = function(game_code, team_code = "VIR", season_code = "E2023"){
   "https://live.euroleague.net/api/Players?" %>% 
     glue("gamecode={game_code}&seasoncode={season_code}&disp=&equipo={team_code}&temp={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType1) %>%
     as_tibble() %>% return()
 }
 
 # getGamePlayByPlay
 getGamePlayByPlay = function(game_code, season_code = "E2023"){
   "https://live.euroleague.net/api/PlayByPlay?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}&disp=&equipo={team_code}&temp={season_code}") %>%
+    glue("gamecode={game_code}&seasoncode={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% 
-    rename_with(TextFormat) %>%
   return()
 }
 
@@ -104,7 +108,6 @@ getGameEvolution = function(game_code, season_code = "E2023"){
   "https://live.euroleague.net/api/Evolution?" %>% 
     glue("gamecode={game_code}&seasoncode={season_code}") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
-    rename_with(TextFormat) %>%
     return()
 }
 
@@ -123,7 +126,7 @@ getTeam = function(team_code = "", competition_code = "E", season_code = "E2023"
             as_tibble()
           else as_tibble(.) %>%
             unnest(cols = c(images, country), names_sep = ".")} %>% 
-        rename_with(TextFormat) %>%
+        rename_with(TextFormatType1) %>%
         rename(TeamCode = Code, TeamName = Name)
     )
   }
@@ -142,7 +145,7 @@ getTeamPeople = function(team_code, competition_code = "E", season_code = "E2023
         unnest(cols = c(person, images, club, season), names_sep = ".") %>% 
         unnest(cols = c(person.country, person.birthCountry,
                         person.images, club.images), names_sep = ".") %>% 
-        rename_with(TextFormat) %>% 
+        rename_with(TextFormatType1) %>% 
         mutate(TeamCode = tc,
                PersonCode = trimws(PersonCode),
                Player = paste0(gsub(".*, ", "", PersonName), " ", gsub(",.*", "", PersonName), " #", Dorsal),
@@ -167,9 +170,15 @@ getTeamGames = function(team_code, competition_code = "E", season_code = "E2023"
         unnest(c(home.quarters, home.coach, home.imageUrls,
                  away.quarters, away.coach, away.imageUrls),
                names_sep = ".") %>% select(-broadcasters) %>%
-        rename_with(TextFormat) %>%
+        rename_with(TextFormatType1) %>%
         rename(GameId = Id, GameCode = Code, GameDate = Date, GameStatus = Status, Round = RoundRound) %>% 
-        mutate(TeamCode = tc, .before = 1)
+        mutate(TeamCode = tc,
+               WinLoss = ifelse((TeamCode == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
+               TeamCodeAgainst = ifelse(TeamCode == HomeCode, AwayCode, HomeCode),
+               HomeAway = ifelse((TeamCode == HomeCode), "Home", "Away"), 
+               GameDate = as.Date(GameDate),
+               TeamScore = ifelse(HomeAway == "Home", HomeScore, AwayScore),
+               TeamAgainstScore = ifelse(HomeAway == "Away", HomeScore, AwayScore), .before = 1)
     )
   }
   return(out)
@@ -237,7 +246,7 @@ GetCompetitionStandings = function(competition_code = "E", season_code = "E2023"
   as_tibble()  %>%
   unnest(cols = c(club), names_sep = ".") %>% 
   unnest(c(club.images), names_sep = ".") %>%
-  rename_with(TextFormat) %>% 
+  rename_with(TextFormatType1) %>% 
   return()
 }
 
@@ -249,7 +258,7 @@ GetCompetitionStreaks = function(competition_code = "E", season_code = "E2023", 
     as_tibble()  %>%
     unnest(cols = c(club), names_sep = ".") %>% 
     unnest(c(club.images), names_sep = ".") %>%
-    rename_with(TextFormat) %>% 
+    rename_with(TextFormatType1) %>% 
     return()
 }
  
@@ -259,7 +268,7 @@ GetCompetitionRounds = function(competition_code = "E", season_code = "E2023"){
     glue("{competition_code}/seasons/{season_code}/rounds") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     as_tibble() %>% 
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType1) %>%
     return()
 }
 
@@ -275,7 +284,7 @@ getCompetitionGames = function(phase_type = "", round, competition_code = "E", s
     unnest(c(home.quarters, home.coach, home.imageUrls,
              away.quarters, away.coach, away.imageUrls),
            names_sep = ".") %>% select(-broadcasters) %>%
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType1) %>%
     return()
 }
 
@@ -285,7 +294,7 @@ GetCompetitionHistory = function(competition_code = "E"){
     glue("{competition_code}/seasons") %>%
     GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$data %>%
     as_tibble() %>% 
-    rename_with(TextFormat) %>%
+    rename_with(TextFormatType1) %>%
     return()
 }
 
@@ -295,13 +304,7 @@ GetCompetitionHistory = function(competition_code = "E"){
 
 GetPlayerAllStats = function(team_code) {
   
-  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>%
-    mutate(WinLoss = ifelse((TeamCode == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
-           TeamCodeAgainst = ifelse(TeamCode == HomeCode, AwayCode, HomeCode),
-           HomeAway = ifelse((TeamCode == HomeCode), "Home", "Away"), 
-           GameDate = as.Date(GameDate),
-           TeamScore = ifelse(HomeAway == "Home", HomeScore, AwayScore),
-           TeamAgainstScore = ifelse(HomeAway == "Away", HomeScore, AwayScore)) %>% 
+  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>% 
     distinct(GameCode, Round, GameDate, TeamCode, TeamCodeAgainst, WinLoss, HomeAway, TeamScore, TeamAgainstScore)
   
   out = NULL
@@ -325,20 +328,14 @@ GetPlayerAllStats = function(team_code) {
            across(ends_with("%"), ~round(., 2)),
            across(everything(), ~ifelse(is.nan(.), NA, .))) %>% 
     left_join(GamesPlayed, by = c("TeamCode", "GameCode")) %>%
-    rename_with(TextFormat)
+    rename_with(TextFormatType1)
   
   return(out)
 }
 
 getTeamAllStats = function(team_code) {
   
-  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>%
-    mutate(WinLoss = ifelse((TeamCode == HomeCode) == (HomeScore > AwayScore), "Win", "Loss"),
-           TeamCodeAgainst = ifelse(TeamCode == HomeCode, AwayCode, HomeCode),
-           HomeAway = ifelse((TeamCode == HomeCode), "Home", "Away"), 
-           GameDate = as.Date(GameDate),
-           TeamScore = ifelse(HomeAway == "Home", HomeScore, AwayScore),
-           TeamAgainstScore = ifelse(HomeAway == "Away", HomeScore, AwayScore)) %>% 
+  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>% 
     distinct(GameCode, Round, GameDate, TeamCode, TeamCodeAgainst, WinLoss, HomeAway, TeamScore, TeamAgainstScore)
   
   out = NULL
@@ -363,16 +360,31 @@ getTeamAllStats = function(team_code) {
     mutate(across(-c("GameCode", "GP", ends_with("%")) & starts_with("G"), ~round(./GP, 2)),
            across(ends_with("%"), ~round(., 2)),
            across(everything(), ~ifelse(is.nan(.), NA, .))) %>%
-    rename_with(TextFormat)
+    rename_with(TextFormatType1)
   
   return(out)
   
 }
 
+getGamePointsTeam = function(team_code) {
+  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>% 
+    distinct(GameCode, Round, GameDate, TeamCode, TeamCodeAgainst, WinLoss, HomeAway, TeamScore, TeamAgainstScore)
+  
+  out = NULL
+  for (gp in unique(GamesPlayed$GameCode)) {
+    out = bind_rows(
+      out,
+      getGamePoints(gp) %>% filter(TeamCode %in% unique(GamesPlayed$TeamCode))
+    )
+  }
+  
+  return(out)
+}
+
 ### Utils ###
 rename_stat = function(data) {
 
-  data = data %>% rename_with(TextFormat)
+  data = data %>% rename_with(TextFormatType1)
   
   exchange_table = tibble(
     col_to = c("PIR", "PM", "PTS", "2FGM", "2FGA", "3FGM", "3FGA", 
@@ -417,13 +429,22 @@ StatsRange = tibble(
            "Valuation (PIR)")
 )
 
-TextFormat = function(x){
+TextFormatType1 = function(x){
   x %>% 
   gsub("([A-Z])", " \\1", .) %>% 
     gsub("\\.", " ", .) %>% 
     str_to_title() %>% 
     gsub(" ", "", .) %>% 
     return()
+}
+TextFormatType2 = function(x){
+  x %>% 
+    gsub("_", " ", .) %>% 
+    str_to_title(.) %>% 
+    gsub(" ", "", .) %>% 
+    gsub("IdPlayer", "Player_ID", .) %>% 
+    gsub("IdAction", "Action_ID", .) %>% 
+  return()
 }
 
 # TextContrast
@@ -434,4 +455,103 @@ TextContrast = function(hex_color) {
   } else {
     return("black")
   }
+}
+
+# ConstructCourt
+# Taken from https://github.com/solmos/eurolig/blob/5a6e10ca793649a570b76db813f8d9c533cb3904/R/plotShotchart.R
+
+ConstructCourt = function() {
+  outer_lines = tibble(
+    x = c(-7.5, -7.5, 7.5, 7.5, -7.5),
+    y = c(0, 14, 14, 0, 0),
+    type = "Outer lines"
+  )
+  
+  paint = tibble(
+    x = c(-2.45, -2.45, 2.45, 2.45),
+    y = c(0, 5.8, 5.8, 0),
+    type = "Paint"
+  )
+  
+  ft_circle = tibble(
+    ConstructArc(x0 = 0, y0 = 5.8, r = 1.8, start = 0, stop = pi),
+    type = "FT circle"
+  )
+  
+  # The 3pt line transforms into a straight line in the corners
+  # Precisely, it transforms to a vertical line when the x coordinates
+  # of the arc are above or below 6.6 and -6.6 respectively.
+  upper_arc3 = tibble(
+    ConstructArc(x0 = 0, y0 = 1.575, r = 6.75, start = 0, stop = pi),
+    type = "Upper arc"
+  ) %>% filter(abs(.data$x) <= 6.6)
+  
+  # To find the y coordinate where the vertical line in the corner and
+  # the 3pt arc meet, we just find the minimum value of the arc above
+  y_max_corner = min(upper_arc3$y)
+  left_corner3 = tibble(
+    x = c(-6.6, -6.6),
+    y = c(0, y_max_corner),
+    type = "Left corner 3"
+  )
+  right_corner3 = tibble(
+    x = c(6.6, 6.6),
+    y = c(y_max_corner, 0),
+    type = "Right corner 3"
+  )
+  arc3 = rbind(right_corner3, upper_arc3, left_corner3)
+  
+  backboard = tibble(
+    x = c(-0.9, 0.9),
+    y = c(1.2, 1.2),
+    type = "backboard"
+  )
+  
+  rim = ConstructArc(x0 = 0, y0 = 1.575, r = 0.225,
+                       start = 0, stop = 2 * pi) %>% 
+    cbind(type = "rim") %>% 
+    as_tibble()
+  
+  semi_circle = tibble(
+    ConstructArc(0, 1.575, r = 1.25, 0, pi),
+    type = "semi_circle"
+  )
+  semi_circle_left = tibble(
+    x = c(-1.25, -1.25),
+    y = c(1.575, 1.2),
+    type = "semi_circle_left"
+  )
+  semi_circle_right = tibble(
+    x = c(1.25, 1.25),
+    y = c(1.575, 1.2),
+    type = "semi_circle_right"
+  )
+  restricted_area = rbind(semi_circle_right, semi_circle, semi_circle_left)
+  
+  # middle_circle = tibble(
+  #   ConstructArc(0, 14, 1.8, pi, 2 * pi),
+  #   type = "middle_circle"
+  # )
+    
+  Court = bind_rows(
+    outer_lines,
+    paint,
+    ft_circle,
+    arc3,
+    backboard,
+    rim,
+    restricted_area#,
+    # middle_circle
+    )
+  return(Court)
+}
+
+
+ConstructArc = function(x0, y0, r, start, stop) {
+  by = ifelse(start <= stop, 0.001, -0.001)
+  theta = seq(start, stop, by)
+  x = x0 + r * cos(theta)
+  y = y0 + r * sin(theta)
+  
+  return(tibble(x, y))
 }

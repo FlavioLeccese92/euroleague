@@ -1,5 +1,5 @@
 ### ------------------------------------------------------------------------ ###
-####------------------------------ PLUS-MINUS ------------------------------####
+####--------------------------- PLAYER STAT HA WL --------------------------####
 ### ------------------------------------------------------------------------ ###
 
 library(dplyr)
@@ -21,7 +21,8 @@ Sys.setlocale(locale = "en_EN.UTF-8")
 #### Import Data ####
 
 TeamAll = getTeam() %>% distinct(TeamCode, TeamName, ImagesCrest) %>% 
-  mutate(ImagesCrest = paste0(ImagesCrest, "?width=250"))
+  select(TeamCode, TeamName) %>% 
+  mutate(TeamLogo = glue("_temp/{TeamCode}/{TeamCode}-logo.png"))
 
 #### Setting ggplot2 ####
 
@@ -38,6 +39,9 @@ stats = c("PTS", "PIR", "2FGM", "2FG%", "3FGM", "3FG%", "FT%", "AST", "OREB", "D
 gstats = stats %>% paste0("G",. )
 
 TeamAllStats = getTeamAllStats(TeamAll$TeamCode)
+
+CompetitionRounds = GetCompetitionRounds() %>% filter(MinGameStartDate <= Sys.Date())
+CompetitionStanding = GetCompetitionStandings(round = max(CompetitionRounds$Round))
 
 TeamStatsForPlotBar = TeamAllStats %>%
   select(TeamCode, HomeAway, WinLoss, starts_with("G"), -GameCode) %>% 
@@ -89,7 +93,7 @@ TeamStatsForPlotPoint = TeamAllStats %>%
   left_join(TeamAll, by = "TeamCode") %>%
   left_join(CompetitionStanding %>% select(TeamCode = ClubCode, Position), by = "TeamCode") %>% 
   mutate(Team = glue("{TeamName} #{Position}")) %>% 
-  mutate(Team = factor(Team, levels = levels(TeamStatsForPlot$Team)),
+  mutate(Team = factor(Team, levels = levels(TeamStatsForPlotBar$Team)),
          Stat = factor(Stat, levels = gstats),
          WinLoss = factor(WinLoss, levels = c("Win", "Loss"))) %>% 
   distinct()
@@ -100,14 +104,14 @@ TeamHomeAwayLabels = TeamAllStats %>%
   mutate(Team = glue("{TeamName} #{Position}")) %>%
   distinct(Team, HomeAway, WinLoss, GP) %>% 
   pivot_wider(values_from = GP, names_from = WinLoss, values_fill = 0) %>% 
-  mutate(Team = factor(Team, levels = levels(TeamStatsForPlot$Team)),
+  mutate(Team = factor(Team, levels = levels(TeamStatsForPlotBar$Team)),
          Label = ifelse(HomeAway == "Home", glue("Home ({Win}W / {Loss}L)"),
                         glue("({Win}W / {Loss}L) Away")),
          y = "Image",
          x = ifelse(HomeAway == "Home", -1, 1)) %>% 
   distinct(Team, x, y, HomeAway, Label)
 
-TeamImage = TeamStatsForPlot %>% 
+TeamImage = TeamStatsForPlotBar %>% 
   filter(!is.na(TeamLogo)) %>% 
   distinct(Team, TeamLogo) %>% 
   mutate(Stat = "Image", x = 0)

@@ -1,5 +1,5 @@
 ### ------------------------------------------------------------------------ ###
-####------------------------------ PLUS-MINUS ------------------------------####
+####---------------------------- TEAM STAT RADAR ---------------------------####
 ### ------------------------------------------------------------------------ ###
 
 library(dplyr)
@@ -40,7 +40,6 @@ TeamAll = getTeam(TeamAll$TeamCode) %>%
   mutate(TeamLogo = glue("_temp/{TeamCode}/{TeamCode}-logo.png"))
 
 CompetitionRounds = GetCompetitionRounds() %>% filter(MinGameStartDate <= Sys.Date())
-  
 CompetitionStanding = GetCompetitionStandings(round = max(CompetitionRounds$Round))
 
 TeamStatsForPlot = TeamAllStats$TeamAveragePerGame %>% 
@@ -61,8 +60,8 @@ TeamStatsForPlot = TeamAllStats$TeamAveragePerGame %>%
            factor(., levels = c("High", "Mid - High", "Medium", "Mid - Low", "Low")),
          GroupValue = factor(Value, levels = 5:-3),
          SizeValue = ifelse(Value <= 0, "Empty", "Colored")
-  )  %>%
-  left_join(TeamAll, by = "TeamCode")  %>%
+  ) %>%
+  left_join(TeamAll, by = "TeamCode") %>%
   left_join(CompetitionStanding %>% select(TeamCode = ClubCode, Position), by = "TeamCode") %>% 
   arrange(Position) %>% 
   mutate(Team = glue("{TeamName} #{Position}")) %>% 
