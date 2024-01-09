@@ -1,7 +1,8 @@
 ### ------------------------------------------------------------------------ ###
-####---------------------------- TEAM STAT RADAR ---------------------------####
+####------------------------ TEAM STAT AGAINST RADAR -----------------------####
 ### ------------------------------------------------------------------------ ###
 
+library(tidyr)
 library(dplyr)
 library(ggplot2)
 library(ggtext)
@@ -38,15 +39,31 @@ TeamAll = getTeam() %>%
 CompetitionRounds = GetCompetitionRounds() %>% filter(MinGameStartDate <= Sys.Date())
 CompetitionStanding = GetCompetitionStandings(round = max(CompetitionRounds$Round))
 
-TeamAllStats = getTeamStats(TeamAll$TeamCode)
+TeamAllStatsAgainst = getTeamAllStatsAgainst(TeamAll$TeamCode)
 
 stats = c("PTS", "PIR", "2FGM", "2FG%", "3FGM", "3FG%", "FT%", "AST", "OREB", "DREB", "STL", "BLK", "TO")
+gstats = paste0("G", stats)
 
-
-TeamStatsForPlot = TeamAllStats$TeamAveragePerGame %>% 
+TeamStatsForPlot = TeamAllStatsAgainst %>%
+  select(TeamCode, starts_with("G"), -GameCode) %>% 
+  rename_with(~c(stats, "2FGA", "3FGA", "FTA", "FTM"),
+               c(gstats, "G2FGA", "G3FGA", "GFTA", "GFTM")) %>%
+  distinct() %>% 
+  mutate(across(-c("GP", "TeamCode"), ~.*GP)) %>%
+  group_by(TeamCode) %>%
+  summarise(across(everything(), ~sum(., na.rm = TRUE)), .groups = "drop") %>%
+  mutate(`FG%` = 100*(`2FGM` + `3FGM`)/(`2FGA` + `3FGA`),
+         `2FG%` = 100*`2FGM`/`2FGA`,
+         `3FG%` = 100*`3FGM`/`3FGA`,
+         `FT%` = 100*`FTM`/`FTA`) %>% 
+  ungroup() %>% 
+  mutate(across(-c("GP", ends_with("%")) & starts_with("G"), ~round(./GP, 2)),
+         across(ends_with("%"), ~round(., 2)),
+         across(everything(), ~ifelse(is.nan(.), NA, .))) %>% 
   select(TeamCode, all_of(stats)) %>% 
-  mutate(., across(all_of(stats), ~ ntile(., 5))) %>%
-  pivot_longer(cols = all_of(stats), names_to = "Stat", values_to = "Value")%>% 
+  distinct() %>% 
+  mutate(across(all_of(stats), ~ ntile(., 5))) %>%
+  pivot_longer(cols = all_of(stats), names_to = "Stat", values_to = "Value") %>% 
   mutate(ActualValue = Value) %>% 
   group_by(TeamCode, Stat) %>% 
   complete(Value = -3:5) %>% 
@@ -74,7 +91,7 @@ TeamImage = TeamStatsForPlot %>%
   mutate(Stat = 4, y = 0)
 
 # Plot title, subtitle and caption
-PlotTitle = glue("<span>Team combined statistics</span><br>
+PlotTitle = glue("<span>Team combined statistics against</span><br>
                   <span style = 'font-size: 20px'>All teams | Up to round {(max(CompetitionRounds$Round))} | 
                  {format(as.Date(max(CompetitionRounds$MaxGameStartDate)), '%d %b %Y')}</span>")
 
@@ -115,9 +132,9 @@ e = e +
   coord_curvedpolar(clip = "off") +
   scale_alpha_manual(values = c("Actual" = 1, "Less" = 0.25, "Empty" = 0), guide = "none") +
   scale_linewidth_manual(values = c("Empty" = 0, "Colored" = 0.5), guide = "none") +
-  scale_fill_manual(name = "Ranking",
-                    values = c("Low" = "#C70D3A", "Mid - Low" = "#FF7F00", "Medium" = "#FFD301", 
-                               "Mid - High" = "#7BB662", "High" = "#2EB086")) +
+  scale_fill_manual(name = "Ranking against",
+                    values = c("Low" = "#2EB086", "Mid - Low" = "#7BB662", "Medium" = "#FFD301", 
+                               "Mid - High" = "#FF7F00", "High" = "#C70D3A")) +
   scale_hjust_manual(values = 0.8) +
   theme(
     # General
@@ -156,7 +173,7 @@ e = e +
   labs(title = PlotTitle, subtitle = PlotSubtitle, caption = PlotCaption,
        x = "", y = "")
 
-agg_png(glue("plots/E2023/ALL TEAMS/team_stats_quant.png"),
+agg_png(glue("plots/E2023/ALL TEAMS/team_stats_against_quant.png"),
         height = 2000, width = 4100, units = "px", res = 200, background = "transparent")
 print(e)
 dev.off()
