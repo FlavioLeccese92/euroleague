@@ -31,16 +31,17 @@ sysfonts::font_add(family = "Font Awesome 6 Brands", regular = "www/fonts/fa-bra
 showtext_opts(dpi = 200)
 showtext_auto()
 
-TeamAllStats = getTeamStats(TeamAll$TeamCode)
-
-stats = c("PTS", "PIR", "2FGM", "2FG%", "3FGM", "3FG%", "FT%", "AST", "OREB", "DREB", "STL", "BLK", "TO")
-
-TeamAll = getTeam(TeamAll$TeamCode) %>% 
-  select(TeamCode, TeamName, PrimaryColor) %>% 
+TeamAll = getTeam() %>% 
+  select(TeamCode, TeamName) %>% 
   mutate(TeamLogo = glue("_temp/{TeamCode}/{TeamCode}-logo.png"))
 
 CompetitionRounds = GetCompetitionRounds() %>% filter(MinGameStartDate <= Sys.Date())
 CompetitionStanding = GetCompetitionStandings(round = max(CompetitionRounds$Round))
+
+TeamAllStats = getTeamStats(TeamAll$TeamCode)
+
+stats = c("PTS", "PIR", "2FGM", "2FG%", "3FGM", "3FG%", "FT%", "AST", "OREB", "DREB", "STL", "BLK", "TO")
+
 
 TeamStatsForPlot = TeamAllStats$TeamAveragePerGame %>% 
   select(TeamCode, all_of(stats)) %>% 

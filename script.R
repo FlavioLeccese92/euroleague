@@ -186,7 +186,7 @@ getTeamGames = function(team_code, competition_code = "E", season_code = "E2023"
 
 # getTeamStats
 getTeamStats = function(team_code, competition_code = "E", season_code = "E2023", phase_type = ""){
-  
+    
   out = NULL
   for (tc in team_code){
     getin = "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/" %>% 
@@ -343,6 +343,41 @@ getTeamAllStats = function(team_code) {
     out = bind_rows(
       out,
       getGameBoxScore(gp) %>% .[["TeamStats"]] %>% filter(TeamCode %in% unique(GamesPlayed$TeamCode))
+    )
+  }
+  
+  out = out %>%
+    left_join(GamesPlayed %>% distinct(GameCode, TeamCode, HomeAway, WinLoss), by = c("GameCode", "TeamCode")) %>% 
+    relocate(HomeAway, WinLoss, .after = TeamCode) %>%
+    group_by(TeamCode, HomeAway, WinLoss) %>% 
+    mutate(across(-c("GameCode", contains("%")), ~sum(., na.rm = TRUE), .names = "G{.col}"),
+           GP = n_distinct(GameCode)) %>% 
+    mutate(`GFG%` = 100*(`G2FGM` + `G3FGM`)/(`G2FGA` + `G3FGA`),
+           `G2FG%` = 100*`G2FGM`/`G2FGA`,
+           `G3FG%` = 100*`G3FGM`/`G3FGA`,
+           `GFT%` = 100*`GFTM`/`GFTA`) %>% 
+    ungroup() %>% 
+    mutate(across(-c("GameCode", "GP", ends_with("%")) & starts_with("G"), ~round(./GP, 2)),
+           across(ends_with("%"), ~round(., 2)),
+           across(everything(), ~ifelse(is.nan(.), NA, .))) %>%
+    rename_with(TextFormatType1)
+  
+  return(out)
+}
+
+getTeamAllStatsAgainst = function(team_code) {
+  
+  GamesPlayed = getTeamGames(team_code) %>% filter(GameStatus == "result") %>% 
+    distinct(GameCode, Round, GameDate, TeamCode, TeamCodeAgainst, WinLoss, HomeAway, TeamScore, TeamAgainstScore)
+  
+  out = NULL
+  for (gp in unique(GamesPlayed$GameCode)) {
+    out = bind_rows(
+      out,
+      getGameBoxScore(gp) %>% .[["TeamStats"]] %>%
+        bind_cols(TeamCodeAgainst = rev(.$TeamCode), .) %>%
+        filter(TeamCodeAgainst %in% unique(GamesPlayed$TeamCode)) %>% 
+        mutate(TeamCode = TeamCodeAgainst, .after = "GameCode", .keep = "unused")
     )
   }
   
