@@ -15,18 +15,20 @@ library(stringr)
 
 # getGameHeader
 getGameHeader = function(game_code, season_code = "E2023"){
-  "https://live.euroleague.net/api/Header?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
+  GET("https://live.euroleague.net/api/Header?",
+      query = list(gamecode = game_code,
+                   seasoncode = season_code)) %>% 
+    .$content %>% rawToChar() %>% fromJSON(.) %>% as_tibble() %>% 
     rename_with(TextFormatType1) %>%
     return()
 }
 
 # getGameBoxScore
 getGameBoxScore = function(game_code, season_code = "E2023"){
-  getin = "https://live.euroleague.net/api/BoxScore?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}&temp={season_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.)
+  getin = GET("https://live.euroleague.net/api/BoxScore",
+              query = list(gamecode = game_code,
+                           seasoncode = season_code)) %>% 
+    .$content %>% rawToChar() %>% fromJSON(.)
   
   out = NULL
   out[["Team"]] = getin$Stats$Team
@@ -65,9 +67,10 @@ getGameBoxScore = function(game_code, season_code = "E2023"){
 
 # getGamePoints
 getGamePoints = function(game_code, season_code = "E2023"){
-  "https://live.euroleague.net/api/Points?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% .$Rows %>%
+  GET("https://live.euroleague.net/api/Points",
+      query = list(gamecode = game_code,
+                   seasoncode = season_code)) %>%
+    .$content %>% rawToChar() %>% fromJSON(.) %>% .$Rows %>%
     as_tibble() %>%
     rename_with(TextFormatType2) %>%
     mutate(Player_ID = trimws(gsub("P", "", Player_ID)),
@@ -79,27 +82,48 @@ getGamePoints = function(game_code, season_code = "E2023"){
 
 # getGameRound
 getGameRound = function(game_code, season_code = "E2023"){
-  "https://live.euroleague.net/api/Round?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
-    rename_with(TextFormatType1) %>%
+  GET("https://live.euroleague.net/api/Round",
+      query = list(gamecode = game_code,
+                   seasoncode = season_code)) %>%
+    .$content %>% rawToChar() %>% fromJSON(.) %>%
     return()
 }
 
 # getGamePlayers
 getGamePlayers = function(game_code, team_code = "VIR", season_code = "E2023"){
-  "https://live.euroleague.net/api/Players?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}&disp=&equipo={team_code}&temp={season_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>%
+  GET("https://live.euroleague.net/api/Players",
+      query = list(gamecode = game_code,
+                   seasoncode = season_code,
+                   equipo = team_code,
+                   temp = season_code)) %>%
+    .$content %>% rawToChar() %>% fromJSON(.) %>% as_tibble() %>% 
     rename_with(TextFormatType1) %>%
-    as_tibble() %>% return()
+    return()
 }
 
 # getGamePlayByPlay
 getGamePlayByPlay = function(game_code, season_code = "E2023"){
-  "https://live.euroleague.net/api/PlayByPlay?" %>% 
-    glue("gamecode={game_code}&seasoncode={season_code}") %>%
-    GET() %>% .$content %>% rawToChar() %>% fromJSON(.) %>% 
+  getin = GET("https://live.euroleague.net/api/PlayByPlay",
+              query = list(gamecode = game_code,
+                           seasoncode = season_code)) %>%
+    .$content %>% rawToChar() %>% fromJSON(.)
+  
+  out = NULL
+  out[c("Live", "TeamA", "TeamB")] = getin[c("Live", "TeamA", "TeamB")]
+  out[c("CodeTeamA", "CodeTeamB")] = getin[c("CodeTeamA", "CodeTeamB")] %>% trimws()
+  out[["ActualQuarter"]] = getin[["ActualQuarter"]]
+  out[["PlayByPlay"]] = bind_rows(
+    getin[["FirstQuarter"]] %>% mutate(Quarter = 1, .before = 1),
+    getin[["SecondQuarter"]] %>% mutate(Quarter = 2, .before = 1), 
+    getin[["ThirdQuarter"]] %>% mutate(Quarter = 3, .before = 1),
+    getin[["ForthQuarter"]] %>% mutate(Quarter = 4, .before = 1),
+    getin[["ExtraTime"]] %>% mutate(Quarter = 5, .before = 1)) %>%
+    ## fix !!! ##
+    as_tibble() %>% 
+    rename_with(TextFormatType3) %>% 
+    mutate(across(is.character, trimws),
+           across(everything(), ~ifelse(nchar(.) == 0, NA, .)))
+  
   return()
 }
 
@@ -480,6 +504,18 @@ TextFormatType2 = function(x){
     gsub("IdPlayer", "Player_ID", .) %>% 
     gsub("IdAction", "Action_ID", .) %>% 
   return()
+}
+TextFormatType3 = function(x){
+  case_when(
+    x == "PLAYER_ID" ~ "IdPlayer",
+    x == "NUMBEROFPLAY" ~ "NumberOfPlay",
+    x == "CODETEAM" ~ "CodeTeam",
+    x == "PLAYINFO" ~ "PlayInfo",
+    x == "PLAYTYPE" ~ "PlayType",
+    x == "POINTS_A" ~ "PointsA",
+    x == "POINTS_B" ~ "PointsB",
+    TRUE ~ str_to_title(x)) %>% 
+    return()
 }
 
 # TextContrast
