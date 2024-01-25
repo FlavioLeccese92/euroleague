@@ -15,7 +15,10 @@ tibble(
                "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/?/seasons/?/clubs/?/people/stats",
                "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/?/seasons/?/clubs/?/people/stats",
                "https://feeds.incrowdsports.com/provider/euroleague-feeds/v3/competitions/?/seasons/?/rounds/?/basicstandings",
-               "https://feeds.incrowdsports.com/provider/euroleague-feeds/v3/competitions/?/seasons/?/rounds/?/streaks"
+               "https://feeds.incrowdsports.com/provider/euroleague-feeds/v3/competitions/?/seasons/?/rounds/?/streaks",
+               "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/?/seasons/?/rounds",
+               "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/?/seasons/?/games",
+               "https://feeds.incrowdsports.com/provider/euroleague-feeds/v2/competitions/?/seasons"
   ),
   Function = c("getGameHeader",
                "getGameBoxScore",
@@ -33,7 +36,10 @@ tibble(
                "getTeamStats_single",
                "getTeamStats",
                "GetCompetitionStandings",
-               "GetCompetitionStreaks"
+               "GetCompetitionStreaks",
+               "GetCompetitionRounds",
+               "getCompetitionGames",
+               "GetCompetitionHistory"
                ),
   Primitive = c(TRUE,
                 TRUE,
@@ -50,6 +56,9 @@ tibble(
                 FALSE,
                 TRUE,
                 FALSE,
+                TRUE,
+                TRUE,
+                TRUE,
                 TRUE,
                 TRUE
                 ),
@@ -69,6 +78,9 @@ tibble(
              "list of tibbles",
              "list of tibbles",
              "2dim tibble",
-             "2dim tibble"
+             "2dim tibble",
+             "1dim tibble",
+             "1dim tibble",
+             "1dim tibble"
              )
 )
