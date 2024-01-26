@@ -31,8 +31,8 @@ getGameBoxScore = function(game_code, season_code = "E2023"){
     .$content %>% rawToChar() %>% fromJSON(.)
   
   out = NULL
-  out[["Team"]] = getin$Stats$Team
-  out[["Coach"]] = getin$Stats$Coach
+  out[["Team"]] = tibble(Team = getin$Stats$Team)
+  out[["Coach"]] = tibble(Coach = getin$Stats$Coach)
   out[["EndOfQuarter"]] = getin[["EndOfQuarter"]] %>% as_tibble() %>% rename_with(TextFormatType1)
   out[["ByQuarter"]] = getin[["ByQuarter"]] %>% as_tibble() %>% rename_with(TextFormatType1)
   
@@ -79,6 +79,31 @@ getGamePoints = function(game_code, season_code = "E2023"){
            TeamCode = trimws(Team), .keep = "unused", .before = 1) %>% 
     return()
 }
+
+### working here ###
+iterate = function(FUN, ...) {
+  iter_args = expand.grid(..., stringsAsFactors = FALSE)
+  args_names = iter_args %>% rename_with(TextFormatType2) %>% names()
+  out = NULL
+  
+  for (iter in seq_len(nrow(iter_args))) {
+    temp = do.call(FUN, iter_args[iter, ])
+    for (jter in names(temp)) {
+      out[[jter]] = bind_rows(
+        out[[jter]],
+        temp[[jter]] %>% 
+          bind_cols(iter_args[iter, ], .) %>%
+          tibble() %>% select(all_of(setdiff(names(.), args_names))) %>%
+          rename_with(TextFormatType2)
+      )
+    }
+  }
+  
+  return(out)
+}
+
+iter_args = expand.grid(game_code = 1:2, season_code = c("E2023", "E2022"), stringsAsFactors = FALSE)
+iterate(getGamePoints, game_code = 1:2, season_code = c("E2023", "E2022"))
 
 # getGameRound
 getGameRound = function(game_code, season_code = "E2023"){
